@@ -124,13 +124,13 @@ export default function CasperPayButton(props: {
   };
 
   return (
-    <div style={{ marginTop: '0.75rem' }}>
+    <div>
       <button
-        className="btn btn-secondary"
+        className="btn btn-primary"
         style={{
           width: '100%',
-          padding: '0.85rem',
-          fontSize: '0.9rem',
+          padding: '0.9rem',
+          fontSize: '1rem',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',

@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Pico | Micropayments for Creators",
-  description: "Sell small wins for small prices. The X402 powered link-in-bio tool.",
+  title: "Pico | Micropayments on Casper — for Creators & AI Agents",
+  description: "Sell small wins for small prices, to humans and AI agents. x402-style micropayments settled in native CSPR on the Casper Network.",
 };
 
 import { Providers } from "./providers";

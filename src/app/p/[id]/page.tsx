@@ -676,11 +676,23 @@ export default function PublicLinkPage(props: { params: Promise<{ id: string }> 
                 </div>
               )}
 
-              {/* PRIMARY CTA — hidden while the fund widget is open */}
+              {/* PRIMARY CTA — native CSPR on Casper via Casper Wallet.
+                  Renders its own errors/install hints; unlock path
+                  converges on handleCasperPaid → getUnlockedContent. */}
+              {!showFundCard && (
+                <CasperPayButton
+                  linkId={link.id}
+                  price={link.price}
+                  onPaid={handleCasperPaid}
+                />
+              )}
+
+              {/* Second rail — USDC on Base (Coinbase Smart Wallet).
+                  Hidden while the fund widget is open. */}
               {!showFundCard && (
               <button
-                  className="btn btn-primary"
-                  style={{ width: '100%', fontSize: '1rem', padding: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
+                  className="btn btn-secondary"
+                  style={{ width: '100%', fontSize: '0.9rem', padding: '0.85rem', marginTop: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
                   onClick={isConnected && !isBalanceSufficient ? handlePreFund : handlePayAndUnlock}
                   disabled={isProcessing}
                 >
@@ -693,21 +705,10 @@ export default function PublicLinkPage(props: { params: Promise<{ id: string }> 
                 </button>
               )}
 
-              {/* Alternate rail — native CSPR via Casper Wallet. Renders
-                  its own errors/install hints; unlock path converges on
-                  handleCasperPaid → getUnlockedContent. */}
-              {!showFundCard && (
-                <CasperPayButton
-                  linkId={link.id}
-                  price={link.price}
-                  onPaid={handleCasperPaid}
-                />
-              )}
-
               {/* Trust badges */}
               <div style={{ marginTop: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}>
-                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>⚡ Powered by Coinbase Smart Wallet — no seed phrase, no MetaMask</span>
+                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>⚡ CSPR settles on the Casper Network · USDC via Coinbase Smart Wallet</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}>
                   <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>🔐 Authenticate with FaceID or fingerprint</span>
