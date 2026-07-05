@@ -37,6 +37,89 @@ Full docs: **[docs/CASPER.md](docs/CASPER.md)**
 - Agent checkout: `GET /api/casper/content/[id]` returns HTTP 402 with machine-readable payment requirements; retry with `X-Casper-Deploy-Hash` after paying
 - Creators enable the rail by saving their Casper public key in the dashboard
 
+## Agentic payments
+
+Pico isn't just agent-*compatible* — it ships its own autonomous
+buyer and an MCP server, so the full agent economy loop runs inside
+this repo: an AI with a budget discovers content, reasons about value,
+pays on-chain, and consumes what it bought. No human, no browser.
+
+### 1. The buyer agent (`agent/buyer.js`)
+
+An autonomous purchasing agent with its own Casper account, a goal,
+and a hard budget:
+
+```bash
+# one-time: create the agent's keypair (PEM, gitignored)
+npm run agent:keygen
+# fund the printed public key with free testnet CSPR (1000 CSPR):
+#   https://testnet.cspr.live/tools/faucet
+
+# let it shop
+export ANTHROPIC_API_KEY=sk-ant-…       # enables Claude-powered decisions
+npm run agent -- --goal "learn AI prompt engineering" --budget 50
+```
+
+The agent browses `/api/casper/discover`, fetches the 402 quote for
+each item, and asks Claude whether the content is worth the price
+given its goal and remaining budget. Spending policy (per-item cap,
+session budget, balance check) is enforced **in code, before the
+model is consulted** — the AI chooses within its allowance, never
+over it. Every purchase is a real native transfer on Casper, linked
+from the console output to cspr.live. Without an API key it falls
+back to a conservative heuristic; `--yes` skips reasoning entirely.
+
+### 2. The MCP server (`agent/mcp-server.js`)
+
+Exposes the rail as Model Context Protocol tools so any MCP-capable
+assistant (Claude Code, Claude Desktop, custom agents) can buy Pico
+content mid-conversation:
+
+| Tool | Does |
+|---|---|
+| `wallet_status` | agent account, live on-chain balance, spend cap |
+| `discover_content` | the paid-content catalog |
+| `get_quote` | 402 payment requirements for one item |
+| `pay_and_unlock` | sign + broadcast the CSPR transfer, verify on-chain, return content |
+
+```bash
+# register with Claude Code
+claude mcp add pico -- node agent/mcp-server.js
+# env: PICO_BASE_URL, CASPER_AGENT_KEY_PATH, MCP_MAX_SPEND_CSPR (default 25)
+```
+
+### 3. Agent discovery
+
+Crawling agents can learn to transact with Pico unassisted:
+[`/llms.txt`](public/llms.txt) (human/LLM-readable how-to) and
+`/.well-known/x402` (machine-readable manifest of both rails).
+
+### Wallets & faucet
+
+- **Humans:** [Casper Wallet](https://www.casperwallet.io/) browser
+  extension — used by the Pay-with-CSPR button. (CSPR.click is the
+  planned upgrade for a passkey-style UX.)
+- **Agents:** no browser wallet — `npm run agent:keygen` creates a raw
+  ed25519 keypair; the PEM stays on disk (gitignored) and signing
+  happens locally.
+- **Testnet funding:** https://testnet.cspr.live/tools/faucet — free
+  1,000 CSPR, once per account.
+
+### Agentic roadmap
+
+- **Budget wallets (spend policies as a product):** today the MCP
+  server enforces a per-item env cap; the full version is per-agent
+  sub-accounts with owner-set daily limits, creator allowlists, and
+  spend reporting — enforced server-side before any deploy is signed.
+- **Autonomous pricing agent (seller side):** Pico already logs the
+  conversion funnel (`widget_views` vs `payments`). A nightly agent
+  will review each link's funnel and nudge prices within creator-set
+  bounds — making the seller autonomous, not just the buyer.
+- **CSPR → fiat settlement bridge:** sweep creator CSPR earnings
+  through an instant-exchange swap into USDC on Base, exiting via the
+  existing Transak/Ramp off-ramp — closing the fiat loop with one
+  integration.
+
 ---
 
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).

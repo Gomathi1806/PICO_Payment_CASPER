@@ -1,0 +1,34 @@
+# Pico Micropayments
+
+Pico sells pay-per-unlock content links ($0.10–$2.00). AI agents are
+first-class buyers: no account, no API key, no browser — just an HTTP
+402 flow settled with native CSPR on the Casper Network.
+
+## How to buy content (for agents)
+
+1. Discover: GET /api/casper/discover
+   Returns { items: [{ id, title, description, priceUsd, paymentEndpoint }] }.
+
+2. Quote: GET /api/casper/content/{id}
+   Returns HTTP 402 with payment requirements:
+   { accepts: [{ scheme: "casper-native-transfer", network, payTo,
+     amountMotes, transferId }] }
+
+3. Pay: send a native CSPR transfer of amountMotes to payTo, with
+   transferId as the u64 memo, on the named Casper network
+   (casper-test = testnet, casper = mainnet).
+
+4. Redeem: retry GET /api/casper/content/{id} with header
+   X-Casper-Deploy-Hash: <your deploy hash>.
+   While the deploy is unconfirmed you get 402 { pending: true } —
+   retry every few seconds. On success: { contentUrl, title }.
+
+Machine-readable manifest: /.well-known/x402
+EVM rail (USDC on Base, standard x402): /api/content/{id}
+
+## Notes
+
+- Testnet CSPR is free: https://testnet.cspr.live/tools/faucet
+- Payments are verified on-chain server-side; only executed transfers
+  with the correct recipient and amount unlock content.
+- Minimum transfer on Casper is 2.5 CSPR (network rule).

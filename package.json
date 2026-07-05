@@ -6,12 +6,16 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "agent": "node agent/buyer.js",
+    "agent:keygen": "node agent/keygen.js",
+    "mcp": "node agent/mcp-server.js"
   },
   "dependencies": {
     "@coinbase/onchainkit": "^1.1.2",
     "@coinbase/wallet-sdk": "^4.3.7",
     "@coinbase/x402": "^2.1.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@neondatabase/serverless": "^1.1.0",
     "@ramp-network/ramp-instant-sdk": "^6.2.0",
     "@tanstack/react-query": "^5.100.10",
