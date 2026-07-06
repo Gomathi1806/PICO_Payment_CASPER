@@ -185,7 +185,8 @@ export default function CasperPayButton(props: {
             padding: '0.6rem 0.8rem',
           }}
         >
-          Casper Wallet extension not detected.{' '}
+          Casper Wallet extension not detected. It&rsquo;s a <b>desktop browser
+          extension</b> — on a phone, open this page in Chrome on a computer.{' '}
           <a
             href="https://www.casperwallet.io/"
             target="_blank"

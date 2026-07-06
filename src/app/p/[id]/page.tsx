@@ -272,9 +272,10 @@ export default function PublicLinkPage(props: { params: Promise<{ id: string }> 
     if (!link) return;
     setErrorMessage(null);
 
-    // Check if creator has a wallet connected
+    // Check if creator has an EVM wallet connected — this gates only
+    // the USDC/Base rail; the Casper rail has its own key and check.
     if (!creatorWallet) {
-      setErrorMessage('This creator hasn\'t set up payments yet. Please try again later.');
+      setErrorMessage('This creator hasn\'t connected a Coinbase wallet for USDC payments. Use ⚡ Pay with Casper (CSPR) above instead.');
       return;
     }
 
