@@ -8,6 +8,7 @@ import { getCreditEligibility, redeemFreeUnlock } from '@/app/actions/giftcards'
 import GiftPurchase from '@/components/GiftPurchase';
 import { isInAppBrowser, getBrowserName } from '@/lib/utils/browser';
 import { ERC20_ABI, getUSDCConfig, PICO_TREASURY_ADDRESS, splitFee } from '@/lib/constants';
+import { ACTIVE_CASPER_NETWORK, CASPER_NETWORKS } from '@/lib/casper/config';
 import { PicoLink } from '@/db/schema';
 import TransakWidget from '@/components/TransakWidget';
 import UnlockedContent from '@/components/UnlockedContent';
@@ -447,10 +448,11 @@ export default function PublicLinkPage(props: { params: Promise<{ id: string }> 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                 <div style={{ textAlign: 'left' }}>
                   <div style={{ fontSize: '1.4rem', fontWeight: 800 }}>
-                    ${link.price} <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 400 }}>USDC</span>
+                    ${link.price} <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 400 }}>USD</span>
                   </div>
                   <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                    Network: <span style={{ color: 'var(--accent)', fontWeight: 'bold' }}>{usdcConfig.name}</span>
+                    Pay in <span style={{ color: 'var(--accent)', fontWeight: 'bold' }}>CSPR · {CASPER_NETWORKS[ACTIVE_CASPER_NETWORK].label}</span>
+                    {' '}or USDC · {usdcConfig.name}
                   </div>
                 </div>
 
