@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
 import { picoLinks, users } from '@/db/schema';
-import { eq, isNotNull, desc } from 'drizzle-orm';
+import { isNotNull, desc, sql } from 'drizzle-orm';
 import { ACTIVE_CASPER_NETWORK } from '@/lib/casper/config';
 
 /**
@@ -36,7 +36,8 @@ export async function GET() {
         creatorHandle: users.handle,
       })
       .from(picoLinks)
-      .innerJoin(users, eq(users.id, picoLinks.creatorId))
+      // users.id is uuid, creator_id is text (legacy) — cast for the join
+      .innerJoin(users, sql`${users.id}::text = ${picoLinks.creatorId}`)
       .where(isNotNull(users.casperPublicKey))
       .orderBy(desc(picoLinks.createdAt))
       .limit(100);
