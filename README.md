@@ -103,8 +103,8 @@ Crawling agents can learn to transact with Pico unassisted:
   ed25519 keypair; the PEM stays on disk (gitignored) and signing
   happens locally.
 - **Testnet funding:** https://testnet.cspr.live/tools/faucet — free
-  1,000 CSPR, once per account.
-
+  5,000 CSPR, once per account.
+0203879bc44ec4a38209287ad72f5a872b36edaebba8ebfad5fae10931d704b38c0d
 ### Agentic roadmap
 
 - **Budget wallets (spend policies as a product):** today the MCP
@@ -139,6 +139,9 @@ bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+# Testnet Transactions: Testnet LIVE
+https://testnet.cspr.live/account/0203879bc44ec4a38209287ad72f5a872b36edaebba8ebfad5fae10931d704b38c0d
+
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
