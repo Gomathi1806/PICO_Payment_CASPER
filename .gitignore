@@ -48,3 +48,6 @@ next-env.d.ts
 # Agent Casper keys — never commit
 agent/keys/
 *.pem
+
+# Rust build artifacts (Odra contract)
+contracts/pico_router/target/

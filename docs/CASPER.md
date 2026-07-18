@@ -111,3 +111,40 @@ Phase 1 routes 100% of each CSPR payment to the creator (same as the
 EVM x402 flow — see `src/lib/x402-config.ts` for the rationale). The
 95/5 split lands in Phase 2 alongside the PicoRouter contract, which on
 Casper will be an [Odra](https://odra.dev) contract.
+
+## PicoRouter — the on-chain fee splitter (Final Round addition)
+
+Phase 2 shipped: an [Odra](https://odra.dev) smart contract deployed on
+Casper Testnet that splits every unlock payment atomically between the
+creator and the Pico treasury in a single deploy.
+
+| | |
+|---|---|
+| Contract package | `hash-b4b5d701e5bd635b8e49ae2b8dbc8a8169870a9c673479b8f2461d63efa0608c` |
+| Deploy transaction | [`fc00276b…f0b28d`](https://testnet.cspr.live/transaction/fc00276b08b835bad31054499fcabad42e1bef7509f56734a95f64a697f0b28d) |
+| Source | [`contracts/pico_router/src/pico_router.rs`](../contracts/pico_router/src/pico_router.rs) |
+| Fee | 500 bps (5%), owner-settable, **hard-capped at 20% in the contract** |
+
+`pay(creator, link_id)` is payable: attach the unlock price in CSPR and
+the contract forwards 95% to the creator and 5% to the treasury, then
+emits a `PaymentRouted { link_id, payer, creator, creator_amount, fee }`
+event — an on-chain receipt tying the payment to its Pico link. The
+`link_id` mirrors the transfer-id memo of the native-transfer rail.
+
+Build & test (requires Rust + `cargo-odra`):
+
+```bash
+cd contracts/pico_router
+cargo odra test    # 6 unit tests: split math, receipt event, guards
+cargo odra build   # wasm/PicoRouter.wasm
+```
+
+Deploy (Odra livenet backend, no casper-client needed):
+
+```bash
+export ODRA_CASPER_LIVENET_SECRET_KEY_PATH=../../agent/keys/agent-secret.pem
+export ODRA_CASPER_LIVENET_NODE_ADDRESS=https://node.testnet.casper.network
+export ODRA_CASPER_LIVENET_CHAIN_NAME=casper-test
+export ODRA_CASPER_LIVENET_EVENTS_URL=https://node.testnet.casper.network/events
+cargo run --bin pico_router_cli -- deploy
+```
