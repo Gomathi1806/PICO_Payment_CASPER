@@ -37,6 +37,14 @@ Full docs: **[docs/CASPER.md](docs/CASPER.md)**
 - Agent checkout: `GET /api/casper/content/[id]` returns HTTP 402 with machine-readable payment requirements; retry with `X-Casper-Deploy-Hash` after paying
 - Creators enable the rail by saving their Casper public key in the dashboard
 
+## Live on Casper Testnet
+
+| | |
+|---|---|
+| App | https://pico-payment-casper.vercel.app |
+| On-chain payments | [payer account activity](https://testnet.cspr.live/account/0203879bc44ec4a38209287ad72f5a872b36edaebba8ebfad5fae10931d704b38c0d) |
+| **PicoRouter contract** (Odra) | [`hash-b4b5d701…a0608c`](https://testnet.cspr.live/contract-package/b4b5d701e5bd635b8e49ae2b8dbc8a8169870a9c673479b8f2461d63efa0608c) — 95/5 fee splitter, [source](contracts/pico_router/src/pico_router.rs), [deploy tx](https://testnet.cspr.live/transaction/fc00276b08b835bad31054499fcabad42e1bef7509f56734a95f64a697f0b28d) |
+
 ## Agentic payments
 
 Pico isn't just agent-*compatible* — it ships its own autonomous
@@ -104,7 +112,7 @@ Crawling agents can learn to transact with Pico unassisted:
   happens locally.
 - **Testnet funding:** https://testnet.cspr.live/tools/faucet — free
   5,000 CSPR, once per account.
-0203879bc44ec4a38209287ad72f5a872b36edaebba8ebfad5fae10931d704b38c0d
+
 ### Agentic roadmap
 
 - **Budget wallets (spend policies as a product):** today the MCP
@@ -139,9 +147,6 @@ bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-# Testnet Transactions: Testnet LIVE
-https://testnet.cspr.live/account/0203879bc44ec4a38209287ad72f5a872b36edaebba8ebfad5fae10931d704b38c0d
-
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
