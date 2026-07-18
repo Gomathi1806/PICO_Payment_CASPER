@@ -9,7 +9,8 @@
     "lint": "eslint",
     "agent": "node agent/buyer.js",
     "agent:keygen": "node agent/keygen.js",
-    "mcp": "node agent/mcp-server.js"
+    "mcp": "node agent/mcp-server.js",
+    "pricer": "node agent/pricer.js"
   },
   "dependencies": {
     "@coinbase/onchainkit": "^1.1.2",

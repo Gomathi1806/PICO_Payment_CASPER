@@ -96,7 +96,27 @@ claude mcp add pico -- node agent/mcp-server.js
 # env: PICO_BASE_URL, CASPER_AGENT_KEY_PATH, MCP_MAX_SPEND_CSPR (default 25)
 ```
 
-### 3. Agent discovery
+### 3. The pricing agent (`agent/pricer.js`) — seller-side autonomy
+
+The buyer agent makes the *fan* side autonomous. This one makes the
+*seller* side autonomous too — closing the agent-economy loop:
+
+```bash
+# creator opts in per link + sets min/max on the dashboard, then:
+DATABASE_URL=... npm run pricer            # dry-run: propose + log, no writes
+DATABASE_URL=... npm run pricer -- --apply # write the nudge to production
+```
+
+For every opted-in link, the agent reads the last 7 days of
+`widget_views` vs `payments` (Pico's built-in conversion funnel), asks
+Claude for a price nudge grounded in that funnel, and writes the
+proposal to the `price_reviews` audit table with the reason. Human
+control stays intact: the creator sets the bounds, the agent can only
+nudge inside them, and a 24h cooldown prevents cascades. Falls back to
+a simple heuristic if `ANTHROPIC_API_KEY` isn't set. Point a cron at
+`npm run pricer -- --apply` to run nightly.
+
+### 4. Agent discovery
 
 Crawling agents can learn to transact with Pico unassisted:
 [`/llms.txt`](public/llms.txt) (human/LLM-readable how-to) and
@@ -119,10 +139,6 @@ Crawling agents can learn to transact with Pico unassisted:
   server enforces a per-item env cap; the full version is per-agent
   sub-accounts with owner-set daily limits, creator allowlists, and
   spend reporting — enforced server-side before any deploy is signed.
-- **Autonomous pricing agent (seller side):** Pico already logs the
-  conversion funnel (`widget_views` vs `payments`). A nightly agent
-  will review each link's funnel and nudge prices within creator-set
-  bounds — making the seller autonomous, not just the buyer.
 - **CSPR → fiat settlement bridge:** sweep creator CSPR earnings
   through an instant-exchange swap into USDC on Base, exiting via the
   existing Transak/Ramp off-ramp — closing the fiat loop with one

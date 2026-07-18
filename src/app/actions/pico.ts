@@ -67,6 +67,9 @@ export async function updatePicoLink(data: {
   price?: string;
   contentUrl?: string;
   type?: string;
+  autonomousPricing?: boolean;
+  minPrice?: string | null;
+  maxPrice?: string | null;
 }) {
   try {
     const updateValues: Record<string, unknown> = {};
@@ -75,6 +78,9 @@ export async function updatePicoLink(data: {
     if (data.price !== undefined) updateValues.price = data.price;
     if (data.contentUrl !== undefined) updateValues.contentUrl = data.contentUrl || null;
     if (data.type !== undefined) updateValues.type = data.type;
+    if (data.autonomousPricing !== undefined) updateValues.autonomousPricing = data.autonomousPricing;
+    if (data.minPrice !== undefined) updateValues.minPrice = data.minPrice || null;
+    if (data.maxPrice !== undefined) updateValues.maxPrice = data.maxPrice || null;
 
     if (Object.keys(updateValues).length === 0) {
       return { success: false, error: 'No fields to update.' };

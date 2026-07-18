@@ -31,6 +31,11 @@ export default function EditPicoLink(props: { params: Promise<{ id: string }> })
   // clears or changes the URL field.
   const [typeAutoSet, setTypeAutoSet] = useState(false);
   const [contentMode, setContentMode] = useState<'upload' | 'url'>('url');
+  // Autonomous pricing (Phase 2). Opt-in per link; agent nudges price
+  // within [minPrice, maxPrice] using the views-vs-payments funnel.
+  const [autoPrice, setAutoPrice] = useState(false);
+  const [minPrice, setMinPrice] = useState('');
+  const [maxPrice, setMaxPrice] = useState('');
 
   const userId = session?.user?.id;
   const descriptionHasUrl = useMemo(() => URL_REGEX.test(description), [description]);
@@ -53,6 +58,9 @@ export default function EditPicoLink(props: { params: Promise<{ id: string }> })
         setDescription(r.link.description || '');
         setContentUrl(r.link.contentUrl || '');
         setType(r.link.type || 'PDF');
+        setAutoPrice(!!r.link.autonomousPricing);
+        setMinPrice(r.link.minPrice ?? '');
+        setMaxPrice(r.link.maxPrice ?? '');
       } else {
         setNotFound(true);
       }
@@ -74,6 +82,18 @@ export default function EditPicoLink(props: { params: Promise<{ id: string }> })
       );
       if (!ok) return;
     }
+    if (autoPrice) {
+      const min = Number(minPrice);
+      const max = Number(maxPrice);
+      if (!Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max <= 0) {
+        alert('Autonomous pricing needs a positive min and max price.');
+        return;
+      }
+      if (min >= max) {
+        alert('Min price must be lower than max price.');
+        return;
+      }
+    }
     setIsSaving(true);
     const r = await updatePicoLink({
       linkId,
@@ -83,6 +103,9 @@ export default function EditPicoLink(props: { params: Promise<{ id: string }> })
       price,
       contentUrl: contentUrl.trim(),
       type,
+      autonomousPricing: autoPrice,
+      minPrice: autoPrice ? minPrice : null,
+      maxPrice: autoPrice ? maxPrice : null,
     });
     if (r.success) {
       router.push('/dashboard');
@@ -153,6 +176,50 @@ export default function EditPicoLink(props: { params: Promise<{ id: string }> })
               style={{ ...inputStyle, paddingLeft: '2.5rem' }}
             />
             <span style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>$</span>
+          </div>
+        </Field>
+
+        <Field label="🤖 AUTONOMOUS PRICING (BETA)">
+          <div style={{
+            padding: '1rem',
+            background: 'rgba(255, 71, 61, 0.05)',
+            border: '1px solid rgba(255, 71, 61, 0.2)',
+            borderRadius: '10px',
+          }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer', fontSize: '0.85rem' }}>
+              <input
+                type="checkbox"
+                checked={autoPrice}
+                onChange={(e) => setAutoPrice(e.target.checked)}
+                style={{ width: '1rem', height: '1rem', cursor: 'pointer' }}
+              />
+              Let Pico&rsquo;s pricing agent A/B-tune this link&rsquo;s price
+            </label>
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.5rem', lineHeight: 1.5 }}>
+              Every 24h the agent reads views vs sales and proposes a new price <b>strictly within your min/max</b>. Every proposal is logged with its reason.
+            </div>
+            {autoPrice && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.75rem' }}>
+                <div>
+                  <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>MIN $ USD</div>
+                  <input
+                    type="number" step="0.01" min="0.10" placeholder="0.25"
+                    value={minPrice}
+                    onChange={(e) => setMinPrice(e.target.value)}
+                    style={{ ...inputStyle, padding: '0.6rem 0.8rem', fontSize: '0.85rem' }}
+                  />
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>MAX $ USD</div>
+                  <input
+                    type="number" step="0.01" min="0.10" placeholder="2.00"
+                    value={maxPrice}
+                    onChange={(e) => setMaxPrice(e.target.value)}
+                    style={{ ...inputStyle, padding: '0.6rem 0.8rem', fontSize: '0.85rem' }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </Field>
 

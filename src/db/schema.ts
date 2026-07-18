@@ -40,6 +40,14 @@ export const picoLinks = pgTable('pico_links', {
   price: decimal('price', { precision: 10, scale: 2 }).notNull(),
   contentUrl: text('content_url'), // The gated content
   type: text('type').default('PDF'),
+  // Autonomous pricing (Phase 2). Creator opts in and sets the range;
+  // the pricing agent proposes/applies nudges within [minPrice, maxPrice]
+  // based on the views-vs-payments funnel — never below minPrice, never
+  // above maxPrice, never without an opt-in.
+  autonomousPricing: boolean('autonomous_pricing').notNull().default(false),
+  minPrice: decimal('min_price', { precision: 10, scale: 2 }),
+  maxPrice: decimal('max_price', { precision: 10, scale: 2 }),
+  lastPriceReviewAt: timestamp('last_price_review_at'),
   createdAt: timestamp('created_at').defaultNow(),
 });
 
@@ -137,3 +145,23 @@ export const giftCardRedemptions = pgTable('gift_card_redemptions', {
 
 export type GiftCardRedemption = typeof giftCardRedemptions.$inferSelect;
 export type NewGiftCardRedemption = typeof giftCardRedemptions.$inferInsert;
+
+// ─── Price Reviews (Autonomous Seller Agent Audit Log) ──────
+// Every proposal from the pricing agent — accepted or dry-run — is
+// written here with the funnel snapshot it saw and the reason Claude
+// gave. Gives creators a receipt they can inspect, and gives Pico an
+// immutable audit trail for the agentic seller flow.
+export const priceReviews = pgTable('price_reviews', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  linkId: uuid('link_id').notNull(),
+  views: integer('views').notNull().default(0),
+  sales: integer('sales').notNull().default(0),
+  oldPrice: decimal('old_price', { precision: 10, scale: 2 }).notNull(),
+  newPrice: decimal('new_price', { precision: 10, scale: 2 }).notNull(),
+  reason: text('reason').notNull(),
+  applied: boolean('applied').notNull().default(false), // false = dry run
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export type PriceReview = typeof priceReviews.$inferSelect;
+export type NewPriceReview = typeof priceReviews.$inferInsert;
