@@ -10,7 +10,7 @@ import GiveawayButton from '@/components/GiveawayButton';
 import LegalFooter from '@/components/LegalFooter';
 import { calculateFeeBps } from '@/lib/constants';
 import { getUserById, updateWalletAddress } from '@/app/actions/auth';
-import { saveCasperPublicKey } from '@/app/actions/casper';
+import { saveCasperPublicKey, setCasperUseRouter } from '@/app/actions/casper';
 import { PicoLink } from '@/db/schema';
 
 function timeAgo(date: Date): string {
@@ -35,6 +35,8 @@ export default function CreatorDashboard() {
   const [savingCasper, setSavingCasper] = useState(false);
   const [casperError, setCasperError] = useState<string | null>(null);
   const [showCasperInput, setShowCasperInput] = useState(false);
+  const [useRouter, setUseRouter] = useState(false);
+  const [savingRouter, setSavingRouter] = useState(false);
   const [totalEarnings, setTotalEarnings] = useState('0.00');
   const [totalSales, setTotalSales] = useState(0);
   const [perLinkStats, setPerLinkStats] = useState<Record<string, { sales: number; earned: string }>>({});
@@ -59,6 +61,7 @@ export default function CreatorDashboard() {
       if (userResult.success && userResult.user) {
         setWalletAddress(userResult.user.walletAddress);
         setCasperKey(userResult.user.casperPublicKey);
+        setUseRouter(!!userResult.user.casperUseRouter);
       }
 
       // Fetch links
@@ -116,6 +119,19 @@ export default function CreatorDashboard() {
     } catch {
       setIsConnectingWallet(false);
     }
+  };
+
+  const handleToggleRouter = async () => {
+    if (!userId) return;
+    const next = !useRouter;
+    setSavingRouter(true);
+    setUseRouter(next); // optimistic
+    const r = await setCasperUseRouter(userId, next);
+    if (!r.success) {
+      setUseRouter(!next);
+      alert(r.error || 'Failed to save preference.');
+    }
+    setSavingRouter(false);
   };
 
   const handleSaveCasperKey = async () => {
@@ -235,22 +251,46 @@ export default function CreatorDashboard() {
         }),
       }}>
         {casperKey && !showCasperInput ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem' }}>
-            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--success)' }}></div>
-            <span style={{ color: 'var(--text-muted)' }}>Casper:</span>
-            <span style={{ fontFamily: 'monospace', fontSize: '0.7rem' }}>
-              {casperKey.slice(0, 8)}...{casperKey.slice(-6)}
-            </span>
-            <button
-              onClick={() => { setShowCasperInput(true); setCasperInput(casperKey); }}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem' }}>
+              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--success)' }}></div>
+              <span style={{ color: 'var(--text-muted)' }}>Casper:</span>
+              <span style={{ fontFamily: 'monospace', fontSize: '0.7rem' }}>
+                {casperKey.slice(0, 8)}...{casperKey.slice(-6)}
+              </span>
+              <button
+                onClick={() => { setShowCasperInput(true); setCasperInput(casperKey); }}
+                style={{
+                  marginLeft: 'auto', background: 'none', border: 'none',
+                  color: 'var(--accent)', fontSize: '0.7rem', cursor: 'pointer',
+                  textDecoration: 'underline',
+                }}
+              >
+                Change
+              </button>
+            </div>
+            <label
               style={{
-                marginLeft: 'auto', background: 'none', border: 'none',
-                color: 'var(--accent)', fontSize: '0.7rem', cursor: 'pointer',
-                textDecoration: 'underline',
+                display: 'flex', alignItems: 'center', gap: '0.5rem',
+                marginTop: '0.75rem', paddingTop: '0.75rem',
+                borderTop: '1px solid rgba(255,255,255,0.05)',
+                fontSize: '0.72rem', cursor: 'pointer',
               }}
             >
-              Change
-            </button>
+              <input
+                type="checkbox"
+                checked={useRouter}
+                onChange={handleToggleRouter}
+                disabled={savingRouter}
+                style={{ width: '0.95rem', height: '0.95rem', cursor: 'pointer' }}
+              />
+              <span>
+                <b>Settle via PicoRouter contract</b>
+                <span style={{ color: 'var(--text-muted)', marginLeft: '0.4rem' }}>
+                  — atomic 95/5 split with on-chain receipt (vs direct native transfer)
+                </span>
+              </span>
+            </label>
           </div>
         ) : (
           <div>

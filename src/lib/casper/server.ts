@@ -8,7 +8,7 @@ import 'server-only';
 // transfers the node actually executed successfully.
 
 import { CLPublicKey, DeployUtil } from 'casper-js-sdk';
-import { getCasperConfig } from './config';
+import { getCasperConfig, ROUTER_PAYMENT_MOTES } from './config';
 
 interface RpcEnvelope<T> {
   jsonrpc: string;
@@ -110,6 +110,114 @@ export function parseTransferDeploy(signedDeployJson: unknown): {
  * Checks a transfer's recipient against the creator's stored public
  * key, accepting either public-key-hex or account-hash form.
  */
+// ─── Router-call introspection ──────────────────────────────
+
+export interface RouterCallDetails {
+  deployHash: string;
+  senderPublicKeyHex: string;
+  /** Package hash the deploy targets (lowercased hex) */
+  packageHashHex: string;
+  entryPoint: string;
+  /** Creator account hash the deploy will pay, from the router's `creator` arg */
+  creatorAccountHashHex: string;
+  /** u64 memo from the router's `link_id` arg — matches native rail's transferId */
+  linkId: bigint;
+  /** Payment attached to the deploy (paid the transfer + gas) */
+  paymentMotes: bigint;
+  chainName: string;
+}
+
+/**
+ * Parses a signed router-call deploy JSON and extracts what the
+ * server needs to authorize the unlock. The deploy's own hash is
+ * validated by deployFromJson, and the sender's signature covers the
+ * body — so once the checks below pass, the router *will* execute
+ * exactly this pay(creator, link_id) call with this payment attached.
+ */
+export function parseRouterDeploy(signedDeployJson: unknown): {
+  deploy: DeployUtil.Deploy;
+  details: RouterCallDetails;
+} {
+  const result = DeployUtil.deployFromJson(signedDeployJson as { deploy: unknown });
+  if (result.err) throw new Error(`Invalid deploy JSON: ${result.val}`);
+  const deploy = result.unwrap();
+
+  if (!deploy.session.isStoredVersionContractByHash()) {
+    throw new Error('Deploy is not a versioned stored-contract call.');
+  }
+  const stored = deploy.session.storedVersionedContractByHash;
+  if (!stored) throw new Error('Malformed stored-contract session.');
+
+  const packageHashHex = bytesToHex(stored.hash).toLowerCase();
+  const entryPoint = stored.entryPoint;
+
+  const creatorArg = stored.args.args.get('creator');
+  const linkIdArg = stored.args.args.get('link_id');
+  if (!creatorArg || !linkIdArg) {
+    throw new Error('Router call missing creator/link_id args.');
+  }
+
+  const creatorRaw = creatorArg as unknown as { value: () => { data: Uint8Array } };
+  // CLKey wrapping a CLAccountHash: .value() returns the CLAccountHash whose .data is 32 bytes
+  const accountHashBytes = creatorRaw.value().data;
+  if (!accountHashBytes || accountHashBytes.length !== 32) {
+    throw new Error('Router creator arg is not a 32-byte account hash.');
+  }
+  const creatorAccountHashHex = bytesToHex(accountHashBytes).toLowerCase();
+
+  const linkId = BigInt(linkIdArg.value().toString());
+
+  // Payment: session gas + attached_value. Native transfer's payment
+  // is *just* gas; a router call's payment is gas + the unlock price.
+  const paymentSession = deploy.payment;
+  if (!paymentSession.isModuleBytes()) {
+    throw new Error('Deploy payment is not a standard module-bytes payment.');
+  }
+  const paymentAmountArg = paymentSession.getArgByName('amount');
+  if (!paymentAmountArg) throw new Error('Payment missing amount arg.');
+  const paymentMotes = BigInt(paymentAmountArg.value().toString());
+
+  return {
+    deploy,
+    details: {
+      deployHash: bytesToHex(deploy.hash),
+      senderPublicKeyHex: deploy.header.account.toHex().toLowerCase(),
+      packageHashHex,
+      entryPoint,
+      creatorAccountHashHex,
+      linkId,
+      paymentMotes,
+      chainName: deploy.header.chainName,
+    },
+  };
+}
+
+/**
+ * The router call attaches (unlock price + router gas ceiling) as the
+ * standard payment. Reverse that so we can compare the *unlock price*
+ * against the link's price the same way we do for native transfers.
+ */
+export function routerUnlockAmountMotes(paymentMotes: bigint): bigint {
+  return paymentMotes > ROUTER_PAYMENT_MOTES
+    ? paymentMotes - ROUTER_PAYMENT_MOTES
+    : 0n;
+}
+
+/** Matches a router `creator` arg (account hash) against the stored public key. */
+export function routerCreatorMatches(
+  creatorAccountHashHex: string,
+  creatorPublicKeyHex: string,
+): boolean {
+  try {
+    const expected = bytesToHex(
+      CLPublicKey.fromHex(creatorPublicKeyHex).toAccountHash(),
+    ).toLowerCase();
+    return creatorAccountHashHex === expected;
+  } catch {
+    return false;
+  }
+}
+
 export function targetMatchesCreator(targetHex: string, creatorPublicKeyHex: string): boolean {
   const creatorKey = creatorPublicKeyHex.toLowerCase();
   if (targetHex === creatorKey) return true;

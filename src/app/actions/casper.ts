@@ -15,11 +15,15 @@ import {
   ACTIVE_CASPER_NETWORK,
   deployExplorerUrl,
   getCasperConfig,
+  getRouterPackageHash,
   motesToCspr,
 } from '@/lib/casper/config';
 import {
   getDeployExecution,
+  parseRouterDeploy,
   parseTransferDeploy,
+  routerCreatorMatches,
+  routerUnlockAmountMotes,
   submitDeploy,
   targetMatchesCreator,
 } from '@/lib/casper/server';
@@ -54,6 +58,13 @@ export async function getCasperPaymentInfo(linkId: string) {
     const motes = usdToMotes(priceUsd, rate);
     const config = getCasperConfig();
 
+    // Route selection: creator opts in per account, and we only
+    // actually route if a router package is configured for the active
+    // network. Otherwise fall back to the direct native-transfer path
+    // (which never breaks, so mainnet-without-router still works).
+    const routerPackageHash = getRouterPackageHash();
+    const useRouter = !!creator.casperUseRouter && !!routerPackageHash;
+
     return {
       success: true as const,
       creatorCasperKey: creator.casperPublicKey,
@@ -67,6 +78,8 @@ export async function getCasperPaymentInfo(linkId: string) {
       // u64 transfer memo derived from the link UUID so payments are
       // attributable on-chain: first 12 hex chars → 48-bit int.
       transferId: parseInt(linkId.replace(/-/g, '').slice(0, 12), 16),
+      useRouter,
+      routerPackageHash: useRouter ? routerPackageHash : null,
     };
   } catch (error) {
     console.error('[pico/casper] quote failed:', error);
@@ -96,25 +109,62 @@ export async function submitCasperPayment(linkId: string, signedDeployJson: unkn
       return { success: false as const, error: 'Creator has no Casper key.' };
     }
 
-    const { details } = parseTransferDeploy(signedDeployJson);
-
-    if (details.chainName !== ACTIVE_CASPER_NETWORK) {
-      return {
-        success: false as const,
-        error: `Wrong network: deploy targets ${details.chainName}, expected ${ACTIVE_CASPER_NETWORK}.`,
-      };
-    }
-    if (!targetMatchesCreator(details.targetHex, creator.casperPublicKey)) {
-      return { success: false as const, error: 'Transfer target is not the creator.' };
-    }
-
+    // Route dispatch — first shape check picks which validator runs.
+    // A router deploy is a StoredVersionedContractByHash; a native
+    // transfer is a Transfer session. Try router first (it's an
+    // explicit choice); fall through to transfer if it isn't one.
     const rate = await getCsprUsdRate();
     const required = minAcceptableMotes(Number(link.price), rate);
-    if (details.amountMotes < required) {
-      return {
-        success: false as const,
-        error: `Amount too low: ${motesToCspr(details.amountMotes)} CSPR sent, ${motesToCspr(required)} CSPR required.`,
-      };
+    const expectedPackageHash = getRouterPackageHash();
+    const expectedTransferId = parseInt(linkId.replace(/-/g, '').slice(0, 12), 16);
+
+    let isRouter = false;
+    try {
+      const { details } = parseRouterDeploy(signedDeployJson);
+      isRouter = true;
+
+      if (details.chainName !== ACTIVE_CASPER_NETWORK) {
+        return { success: false as const, error: `Wrong network: ${details.chainName}.` };
+      }
+      if (!expectedPackageHash || details.packageHashHex !== expectedPackageHash.toLowerCase()) {
+        return { success: false as const, error: 'Deploy targets a contract Pico does not recognise.' };
+      }
+      if (details.entryPoint !== 'pay') {
+        return { success: false as const, error: `Unexpected entry point: ${details.entryPoint}.` };
+      }
+      if (!routerCreatorMatches(details.creatorAccountHashHex, creator.casperPublicKey)) {
+        return { success: false as const, error: 'Router creator arg is not this link\'s creator.' };
+      }
+      if (details.linkId !== BigInt(expectedTransferId)) {
+        return { success: false as const, error: 'Router link_id does not match this Pico link.' };
+      }
+      const unlockAmount = routerUnlockAmountMotes(details.paymentMotes);
+      if (unlockAmount < required) {
+        return {
+          success: false as const,
+          error: `Amount too low: ${motesToCspr(unlockAmount)} CSPR attached, ${motesToCspr(required)} CSPR required.`,
+        };
+      }
+    } catch (routerErr) {
+      // Not a router deploy — try the native-transfer path.
+      if (!/not a versioned stored-contract/i.test((routerErr as Error).message)) {
+        // Real router-shape error, not "wrong kind of deploy" — surface it.
+        return { success: false as const, error: (routerErr as Error).message };
+      }
+
+      const { details } = parseTransferDeploy(signedDeployJson);
+      if (details.chainName !== ACTIVE_CASPER_NETWORK) {
+        return { success: false as const, error: `Wrong network: ${details.chainName}.` };
+      }
+      if (!targetMatchesCreator(details.targetHex, creator.casperPublicKey)) {
+        return { success: false as const, error: 'Transfer target is not the creator.' };
+      }
+      if (details.amountMotes < required) {
+        return {
+          success: false as const,
+          error: `Amount too low: ${motesToCspr(details.amountMotes)} CSPR sent, ${motesToCspr(required)} CSPR required.`,
+        };
+      }
     }
 
     const deployHash = await submitDeploy(signedDeployJson);
@@ -123,6 +173,7 @@ export async function submitCasperPayment(linkId: string, signedDeployJson: unkn
       success: true as const,
       deployHash,
       explorerUrl: deployExplorerUrl(deployHash),
+      settlementMode: isRouter ? ('router' as const) : ('native' as const),
     };
   } catch (error) {
     console.error('[pico/casper] submit failed:', error);
@@ -186,33 +237,72 @@ export async function confirmCasperPayment(linkId: string, deployHash: string) {
       return { success: false as const, status: 'error' as const, error: 'Creator has no Casper key.' };
     }
 
-    const { details } = parseTransferDeploy({
+    // Same dispatch as submit — try router first, fall back to native
+    // transfer. Verifying against the on-chain deploy JSON we just
+    // fetched (not the client's earlier submission) is what keeps the
+    // grant trust-minimized.
+    const deployWrap = {
       deploy: (execution.deployJson as { deploy?: unknown })?.deploy ?? execution.deployJson,
-    });
-    if (details.deployHash !== hash) {
-      return { success: false as const, status: 'error' as const, error: 'Deploy hash mismatch.' };
-    }
-    if (!targetMatchesCreator(details.targetHex, creator.casperPublicKey)) {
-      return { success: false as const, status: 'error' as const, error: 'Recipient mismatch.' };
-    }
-
+    };
     const rate = await getCsprUsdRate();
-    if (details.amountMotes < minAcceptableMotes(Number(link.price), rate)) {
-      return { success: false as const, status: 'error' as const, error: 'Amount below price.' };
+    const expectedPackageHash = getRouterPackageHash();
+    const expectedTransferId = parseInt(linkId.replace(/-/g, '').slice(0, 12), 16);
+
+    let payerAddress: string;
+    let settlementChain: string = ACTIVE_CASPER_NETWORK;
+    try {
+      const { details } = parseRouterDeploy(deployWrap);
+      if (details.deployHash !== hash) {
+        return { success: false as const, status: 'error' as const, error: 'Deploy hash mismatch.' };
+      }
+      if (!expectedPackageHash || details.packageHashHex !== expectedPackageHash.toLowerCase()) {
+        return { success: false as const, status: 'error' as const, error: 'Wrong router contract.' };
+      }
+      if (details.entryPoint !== 'pay') {
+        return { success: false as const, status: 'error' as const, error: 'Wrong entry point.' };
+      }
+      if (!routerCreatorMatches(details.creatorAccountHashHex, creator.casperPublicKey)) {
+        return { success: false as const, status: 'error' as const, error: 'Router creator mismatch.' };
+      }
+      if (details.linkId !== BigInt(expectedTransferId)) {
+        return { success: false as const, status: 'error' as const, error: 'Router link_id mismatch.' };
+      }
+      const unlockAmount = routerUnlockAmountMotes(details.paymentMotes);
+      if (unlockAmount < minAcceptableMotes(Number(link.price), rate)) {
+        return { success: false as const, status: 'error' as const, error: 'Router amount below price.' };
+      }
+      payerAddress = details.senderPublicKeyHex;
+      settlementChain = `${ACTIVE_CASPER_NETWORK}-router`;
+    } catch (routerErr) {
+      if (!/not a versioned stored-contract/i.test((routerErr as Error).message)) {
+        return { success: false as const, status: 'error' as const, error: (routerErr as Error).message };
+      }
+      const { details } = parseTransferDeploy(deployWrap);
+      if (details.deployHash !== hash) {
+        return { success: false as const, status: 'error' as const, error: 'Deploy hash mismatch.' };
+      }
+      if (!targetMatchesCreator(details.targetHex, creator.casperPublicKey)) {
+        return { success: false as const, status: 'error' as const, error: 'Recipient mismatch.' };
+      }
+      if (details.amountMotes < minAcceptableMotes(Number(link.price), rate)) {
+        return { success: false as const, status: 'error' as const, error: 'Amount below price.' };
+      }
+      payerAddress = details.senderPublicKeyHex;
     }
 
     await db.insert(payments).values({
       linkId,
       txHash: hash,
-      payerAddress: details.senderPublicKeyHex,
+      payerAddress,
       amount: link.price,
-      chain: ACTIVE_CASPER_NETWORK,
+      chain: settlementChain,
     });
 
     return {
       success: true as const,
       status: 'confirmed' as const,
-      payerAddress: details.senderPublicKeyHex,
+      payerAddress,
+      settlementMode: settlementChain.endsWith('-router') ? ('router' as const) : ('native' as const),
     };
   } catch (error) {
     console.error('[pico/casper] confirm failed:', error);
@@ -241,5 +331,20 @@ export async function saveCasperPublicKey(userId: string, publicKeyHex: string) 
   } catch (error) {
     console.error('[pico/casper] key save failed:', error);
     return { success: false as const, error: 'Failed to save Casper key.' };
+  }
+}
+
+/**
+ * Toggle whether the creator's Pico links settle CSPR payments through
+ * PicoRouter (atomic 95/5 split + on-chain receipt) or as direct
+ * native transfers. Off by default — creators opt in per account.
+ */
+export async function setCasperUseRouter(userId: string, useRouter: boolean) {
+  try {
+    await db.update(users).set({ casperUseRouter: useRouter }).where(eq(users.id, userId));
+    return { success: true as const };
+  } catch (error) {
+    console.error('[pico/casper] router toggle failed:', error);
+    return { success: false as const, error: 'Failed to save preference.' };
   }
 }

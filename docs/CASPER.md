@@ -148,3 +148,32 @@ export ODRA_CASPER_LIVENET_CHAIN_NAME=casper-test
 export ODRA_CASPER_LIVENET_EVENTS_URL=https://node.testnet.casper.network/events
 cargo run --bin pico_router_cli -- deploy
 ```
+
+### Wiring the router into the paywall
+
+The checkout flow supports **both settlement paths** and the creator
+picks per account, via the "Settle via PicoRouter contract" toggle on
+the dashboard (stored as `users.casper_use_router`):
+
+| Off (default) | On |
+|---|---|
+| Direct native CSPR transfer, fan → creator (100%). No contract touched. | Fan signs a `pay(creator, link_id)` call on the router. The contract atomically splits 95% to the creator and 5% to the treasury, and emits `PaymentRouted` — an on-chain receipt tying the payment to the Pico link. |
+| Attached payment = 0.1 CSPR gas | Attached payment = 3 CSPR gas ceiling + unlock price (leftover refunds) |
+| `payments.chain = 'casper-test'` | `payments.chain = 'casper-test-router'` |
+
+The client dispatches on `getCasperPaymentInfo(...).useRouter`
+([`src/lib/casper/deploy.ts`](../src/lib/casper/deploy.ts) provides
+both `signTransferWithCasperWallet` and `signRouterCallWithCasperWallet`);
+the server dispatches on the deploy's session shape
+([`src/app/actions/casper.ts`](../src/app/actions/casper.ts) tries
+`parseRouterDeploy` first, falls back to `parseTransferDeploy`).
+Verification is identical in strictness — chain name, package hash,
+entry point, creator account hash, `link_id` memo, attached amount are
+all re-checked against the on-chain deploy before the unlock is granted.
+
+Router package hash on the active network comes from
+`PICO_ROUTER_PACKAGE_HASH` in `src/lib/casper/config.ts`, overridable
+per environment with `NEXT_PUBLIC_CASPER_ROUTER_PACKAGE_HASH_TESTNET`
+and `NEXT_PUBLIC_CASPER_ROUTER_PACKAGE_HASH_MAINNET`. If no hash is
+configured for the active network, the toggle silently falls back to
+native transfer — mainnet-without-router still works.

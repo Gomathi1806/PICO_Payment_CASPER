@@ -6,9 +6,15 @@
 // signing, and returns the signed deploy as JSON for the server
 // action to validate and submit (the browser never talks to the node).
 
-import { CLPublicKey, DeployUtil } from 'casper-js-sdk';
+import {
+  CLAccountHash,
+  CLPublicKey,
+  CLValueBuilder,
+  DeployUtil,
+  RuntimeArgs,
+} from 'casper-js-sdk';
 import type { CasperNetworkName } from './config';
-import { TRANSFER_PAYMENT_MOTES } from './config';
+import { ROUTER_PAYMENT_MOTES, TRANSFER_PAYMENT_MOTES } from './config';
 
 // Minimal typing for the Casper Wallet extension's injected provider.
 // https://www.casperwallet.io/develop
@@ -136,3 +142,108 @@ const bytesToHex = (bytes: Uint8Array): string =>
   Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
+
+const hexToBytes32 = (hex: string): Uint8Array => {
+  const clean = hex.replace(/^0x/, '').toLowerCase();
+  if (clean.length !== 64) throw new Error(`Expected 32-byte hex, got ${clean.length / 2} bytes`);
+  const out = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) out[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+  return out;
+};
+
+/**
+ * Builds an unsigned deploy calling PicoRouter.pay(creator, link_id)
+ * with the unlock price attached. Router is a versioned contract
+ * package — we call the package hash so upgrades take effect without
+ * touching the client. Args match the contract's #[odra::module]
+ * signature: `creator: Address` (CLKey wrapping the account hash) and
+ * `link_id: u64` (transfer-id memo mirrors native-transfer flow).
+ */
+export const buildRouterCallDeploy = (params: {
+  senderPublicKeyHex: string;
+  routerPackageHashHex: string;
+  targetPublicKeyHex: string;
+  amountMotes: bigint;
+  chainName: CasperNetworkName;
+  transferId: number;
+}): DeployUtil.Deploy => {
+  const sender = CLPublicKey.fromHex(params.senderPublicKeyHex);
+  const creator = CLPublicKey.fromHex(params.targetPublicKeyHex);
+  const creatorKey = CLValueBuilder.key(new CLAccountHash(creator.toAccountHash()));
+
+  const deployParams = new DeployUtil.DeployParams(
+    sender,
+    params.chainName,
+    1,
+    30 * 60 * 1000,
+  );
+
+  const session = DeployUtil.ExecutableDeployItem.newStoredVersionContractByHash(
+    hexToBytes32(params.routerPackageHashHex),
+    null, // latest version — upgrades pick up automatically
+    'pay',
+    RuntimeArgs.fromMap({
+      creator: creatorKey,
+      link_id: CLValueBuilder.u64(params.transferId),
+      // The attached CSPR is passed as the standard `amount` runtime
+      // arg on the payment side (see standardPayment). Odra's payable
+      // reads `env.attached_value()`, wired to that same amount.
+    }),
+  );
+
+  const payment = DeployUtil.standardPayment(
+    (ROUTER_PAYMENT_MOTES + params.amountMotes).toString(),
+  );
+
+  return DeployUtil.makeDeploy(deployParams, session, payment);
+};
+
+/**
+ * Full client-side signing round trip for a PicoRouter.pay() call.
+ * Mirrors signTransferWithCasperWallet — same Casper Wallet interface,
+ * different session — so the CasperPayButton state machine stays flat.
+ */
+export const signRouterCallWithCasperWallet = async (params: {
+  routerPackageHashHex: string;
+  targetPublicKeyHex: string;
+  amountMotes: bigint;
+  chainName: CasperNetworkName;
+  transferId: number;
+}): Promise<{ signedDeployJson: object; senderPublicKeyHex: string; deployHash: string }> => {
+  const wallet = getCasperWallet();
+
+  const connected = await wallet.isConnected().catch(() => false);
+  if (!connected) {
+    const ok = await wallet.requestConnection();
+    if (!ok) throw new Error('Wallet connection was rejected.');
+  }
+
+  const senderPublicKeyHex = await wallet.getActivePublicKey();
+
+  const deploy = buildRouterCallDeploy({
+    senderPublicKeyHex,
+    routerPackageHashHex: params.routerPackageHashHex,
+    targetPublicKeyHex: params.targetPublicKeyHex,
+    amountMotes: params.amountMotes,
+    chainName: params.chainName,
+    transferId: params.transferId,
+  });
+
+  const deployJson = DeployUtil.deployToJson(deploy);
+  const result = await wallet.sign(JSON.stringify(deployJson), senderPublicKeyHex);
+  if (result.cancelled || !result.signatureHex) {
+    throw new Error('Signature request was cancelled.');
+  }
+
+  const signedDeploy = DeployUtil.setSignature(
+    deploy,
+    hexToBytes(result.signatureHex),
+    CLPublicKey.fromHex(senderPublicKeyHex),
+  );
+
+  return {
+    signedDeployJson: DeployUtil.deployToJson(signedDeploy),
+    senderPublicKeyHex,
+    deployHash: bytesToHex(signedDeploy.hash),
+  };
+};

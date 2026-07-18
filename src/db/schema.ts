@@ -24,6 +24,11 @@ export const users = pgTable('users', {
   // Casper account public key (hex, 01…/02… prefixed) — the payout
   // target for the CSPR rail, sibling of the EVM walletAddress.
   casperPublicKey: text('casper_public_key'),
+  // Route CSPR payments through PicoRouter (atomic 95/5 split with an
+  // on-chain PaymentRouted receipt) instead of a direct native transfer.
+  // Opt-in per creator: the router is stricter (contract fee, more gas)
+  // but produces the audit trail contract-native marketplaces want.
+  casperUseRouter: boolean('casper_use_router').notNull().default(false),
   role: text('role').notNull().default('creator').$type<UserRole>(),
   createdAt: timestamp('created_at').defaultNow(),
 });

@@ -65,6 +65,9 @@ export const getCasperConfig = (): CasperNetworkConfig => {
 export const MOTES_PER_CSPR = 1_000_000_000n;
 export const MIN_TRANSFER_MOTES = 2_500_000_000n; // 2.5 CSPR network minimum
 export const TRANSFER_PAYMENT_MOTES = 100_000_000n; // 0.1 CSPR gas for native transfer
+// A contract call is heavier than a native transfer — three state
+// writes and an event emission — so give it more gas headroom.
+export const ROUTER_PAYMENT_MOTES = 3_000_000_000n; // 3 CSPR gas ceiling for pay()
 
 export const motesToCspr = (motes: bigint): string => {
   const whole = motes / MOTES_PER_CSPR;
@@ -78,3 +81,21 @@ export const csprToMotes = (cspr: number): bigint =>
 
 export const deployExplorerUrl = (deployHash: string): string =>
   `${getCasperConfig().explorerUrl}/deploy/${deployHash}`;
+
+// ─── PicoRouter — on-chain fee splitter ─────────────────────
+// Deployed as a versioned contract package; calls target the package
+// hash and Casper resolves the latest version at execution time. Set
+// per network so a future mainnet deploy just needs another env var.
+
+export const PICO_ROUTER_PACKAGE_HASH: Record<CasperNetworkName, string | null> = {
+  'casper-test':
+    process.env.NEXT_PUBLIC_CASPER_ROUTER_PACKAGE_HASH_TESTNET ||
+    'b4b5d701e5bd635b8e49ae2b8dbc8a8169870a9c673479b8f2461d63efa0608c',
+  casper: process.env.NEXT_PUBLIC_CASPER_ROUTER_PACKAGE_HASH_MAINNET || null,
+};
+
+export const getRouterPackageHash = (): string | null =>
+  PICO_ROUTER_PACKAGE_HASH[ACTIVE_CASPER_NETWORK];
+
+export const contractExplorerUrl = (packageHashHex: string): string =>
+  `${getCasperConfig().explorerUrl}/contract-package/${packageHashHex}`;

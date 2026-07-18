@@ -35,6 +35,7 @@ export default function CasperPayButton(props: {
   const [quote, setQuote] = useState<{ amountCspr: string; networkLabel: string } | null>(null);
   const [explorerUrl, setExplorerUrl] = useState<string | null>(null);
   const [needsWallet, setNeedsWallet] = useState(false);
+  const [settlementMode, setSettlementMode] = useState<'native' | 'router' | null>(null);
 
   const busy = step !== 'idle' && step !== 'done';
 
@@ -45,9 +46,11 @@ export default function CasperPayButton(props: {
     try {
       // Lazy-load the SDK-heavy client module only when the fan
       // actually chooses the Casper rail.
-      const { isCasperWalletInstalled, signTransferWithCasperWallet } = await import(
-        '@/lib/casper/deploy'
-      );
+      const {
+        isCasperWalletInstalled,
+        signTransferWithCasperWallet,
+        signRouterCallWithCasperWallet,
+      } = await import('@/lib/casper/deploy');
 
       if (!isCasperWalletInstalled()) {
         setNeedsWallet(true);
@@ -60,14 +63,28 @@ export default function CasperPayButton(props: {
         throw new Error(info.error);
       }
       setQuote({ amountCspr: info.amountCspr, networkLabel: info.networkLabel });
+      setSettlementMode(info.useRouter ? 'router' : 'native');
 
       setStep('signing');
-      const { signedDeployJson, senderPublicKeyHex } = await signTransferWithCasperWallet({
-        targetPublicKeyHex: info.creatorCasperKey,
-        amountMotes: BigInt(info.amountMotes),
-        chainName: info.chainName,
-        transferId: info.transferId,
-      });
+      // Route selection resolves here: creator opted in AND a router
+      // package is configured for the active network → sign the
+      // contract call; otherwise the classic native-transfer path.
+      const signed =
+        info.useRouter && info.routerPackageHash
+          ? await signRouterCallWithCasperWallet({
+              routerPackageHashHex: info.routerPackageHash,
+              targetPublicKeyHex: info.creatorCasperKey,
+              amountMotes: BigInt(info.amountMotes),
+              chainName: info.chainName,
+              transferId: info.transferId,
+            })
+          : await signTransferWithCasperWallet({
+              targetPublicKeyHex: info.creatorCasperKey,
+              amountMotes: BigInt(info.amountMotes),
+              chainName: info.chainName,
+              transferId: info.transferId,
+            });
+      const { signedDeployJson, senderPublicKeyHex } = signed;
 
       setStep('submitting');
       const submitted = await submitCasperPayment(props.linkId, signedDeployJson);
@@ -168,8 +185,21 @@ export default function CasperPayButton(props: {
             textDecoration: 'underline',
           }}
         >
-          Track the transfer on CSPR.live →
+          Track the {settlementMode === 'router' ? 'contract call' : 'transfer'} on CSPR.live →
         </a>
+      )}
+
+      {settlementMode === 'router' && step !== 'idle' && step !== 'done' && (
+        <div
+          style={{
+            marginTop: '0.4rem',
+            fontSize: '0.65rem',
+            color: 'var(--text-muted)',
+            textAlign: 'center',
+          }}
+        >
+          Settling on-chain via PicoRouter (atomic 95/5 split)
+        </div>
       )}
 
       {needsWallet && (
