@@ -1,5 +1,7 @@
 # Pico — Frictionless micropayments for creators & agents
 
+**Live:** [pico-payment-casper.vercel.app](https://pico-payment-casper.vercel.app) · **Follow:** [@GomathiT4](https://x.com/GomathiT4) · **Buildathon:** Casper Agentic Buildathon 2026 — Final Round qualifier 🏁
+
 ## The idea
 
 Creators and publishers lose their audience at the checkout page:
