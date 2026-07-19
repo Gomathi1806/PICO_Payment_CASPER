@@ -10,12 +10,14 @@
     "agent": "node agent/buyer.js",
     "agent:keygen": "node agent/keygen.js",
     "mcp": "node agent/mcp-server.js",
-    "pricer": "node agent/pricer.js"
+    "pricer": "node agent/pricer.js",
+    "agent:x402": "node agent/x402-buyer.mjs"
   },
   "dependencies": {
     "@coinbase/onchainkit": "^1.1.2",
     "@coinbase/wallet-sdk": "^4.3.7",
     "@coinbase/x402": "^2.1.0",
+    "@make-software/casper-x402": "^1.0.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@neondatabase/serverless": "^1.1.0",
     "@ramp-network/ramp-instant-sdk": "^6.2.0",

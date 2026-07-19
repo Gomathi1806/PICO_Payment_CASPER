@@ -177,3 +177,36 @@ per environment with `NEXT_PUBLIC_CASPER_ROUTER_PACKAGE_HASH_TESTNET`
 and `NEXT_PUBLIC_CASPER_ROUTER_PACKAGE_HASH_MAINNET`. If no hash is
 configured for the active network, the toggle silently falls back to
 native transfer — mainnet-without-router still works.
+
+## Standard x402 via the CSPR.cloud facilitator (gasless, WCSPR)
+
+The third settlement mode — and the most ecosystem-native. Pico's
+standard x402 endpoint (`/api/content/[id]`, the same one that quotes
+USDC on Base) also quotes **WCSPR on Casper** when the creator has a
+Casper key and `CSPR_CLOUD_ACCESS_TOKEN` is set. Under this scheme the
+payer signs an **EIP-712 authorization** for a CEP-18
+`transfer_with_authorization` — no deploy, no broadcast, no gas — and
+the official [CSPR.cloud facilitator](https://docs.cspr.cloud/x402-facilitator-api/reference)
+verifies, submits, and confirms the payment on-chain.
+
+```bash
+# gasless agent purchase (agent key must hold WCSPR):
+npm run agent:x402 -- --link <id>
+```
+
+First live settlement (testnet, $0.10 unlock ≈ 53 WCSPR):
+[`9b2a99c6…ab264b`](https://testnet.cspr.live/deploy/9b2a99c6b8403cc505d106c4b787181402bd4f02cc9f7581dfb01fb464ab264b)
+
+| Piece | Value |
+|---|---|
+| Facilitator | `https://x402-facilitator.cspr.cloud` (auth: CSPR.cloud access token) |
+| Scheme / network | `exact` on `casper:casper-test` and `casper:casper` (CAIP-2) |
+| Asset | WCSPR (CEP-18), testnet package `3d80df21ba…847c1e`, 9 decimals |
+| payTo format | `00`-prefixed creator account hash |
+| Client | `@make-software/casper-x402` + `@x402/fetch` (`agent/x402-buyer.mjs`) |
+| Swap CSPR↔WCSPR | [testnet.cspr.trade](https://testnet.cspr.trade) (WCSPR menu) |
+
+Pico now demonstrates **all three Casper settlement models in one
+paywall**: native transfers (simplest), the PicoRouter contract
+(atomic fee split + receipt), and standard x402/WCSPR (gasless,
+interoperable with any x402 client).

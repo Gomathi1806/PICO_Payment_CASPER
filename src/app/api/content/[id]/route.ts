@@ -3,6 +3,7 @@ import { db } from '@/db';
 import { picoLinks, users, payments, widgetViews } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { withDynamicX402 } from '@/lib/x402-config';
+import { CLPublicKey } from 'casper-js-sdk';
 
 /**
  * x402 paywalled content endpoint.
@@ -32,9 +33,31 @@ async function loadLink(linkId: string) {
   const creator = await db.query.users.findFirst({
     where: eq(users.id, link.creatorId),
   });
-  if (!creator?.walletAddress) return null;
+  if (!creator) return null;
 
-  return { link, creatorWallet: creator.walletAddress as `0x${string}` };
+  // Standard Casper x402 payTo: '00'-prefixed account hash (Key::Account
+  // serialization), derived from the creator's saved public key.
+  let casperPayTo: string | null = null;
+  if (creator.casperPublicKey) {
+    try {
+      const accountHash = Buffer.from(
+        CLPublicKey.fromHex(creator.casperPublicKey).toAccountHash(),
+      ).toString('hex');
+      casperPayTo = `00${accountHash}`;
+    } catch {
+      casperPayTo = null;
+    }
+  }
+
+  // The paywall needs at least ONE payable rail: an EVM wallet for the
+  // USDC scheme or a Casper key for the WCSPR scheme.
+  if (!creator.walletAddress && !casperPayTo) return null;
+
+  return {
+    link,
+    creatorWallet: (creator.walletAddress as `0x${string}`) ?? null,
+    casperPayTo,
+  };
 }
 
 const handler = async (req: NextRequest) => {
@@ -103,5 +126,6 @@ export const GET = withDynamicX402(handler, async (req) => {
     price: `$${loaded.link.price}`,
     payTo: loaded.creatorWallet,
     description: `Unlock: ${loaded.link.title}`,
+    casperPayTo: loaded.casperPayTo,
   };
 });
