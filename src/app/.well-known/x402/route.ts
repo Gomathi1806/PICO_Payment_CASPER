@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { ACTIVE_CASPER_NETWORK, getCasperConfig } from '@/lib/casper/config';
+import { CASPER_CAIP2, DEFAULT_NETWORK, casperX402Enabled } from '@/lib/x402-config';
 
 /**
  * Machine-readable payment manifest — lets a crawling agent learn how
@@ -27,10 +28,24 @@ export async function GET() {
           '200 → { contentUrl, title } once the transfer is verified on-chain',
         ],
       },
+      // Advertise the same networks /api/content/{linkId} actually quotes.
+      ...(casperX402Enabled()
+        ? [
+            {
+              scheme: 'exact',
+              network: CASPER_CAIP2,
+              asset: 'WCSPR',
+              paymentEndpoint: '/api/content/{linkId}',
+              note: 'Standard x402 (WCSPR, CEP-18) settled by the CSPR.cloud facilitator.',
+            },
+          ]
+        : []),
       {
         scheme: 'exact',
-        network: 'eip155:8453',
-        note: 'EVM x402 (USDC on Base) at /api/content/{linkId} via the standard x402 facilitator flow.',
+        network: DEFAULT_NETWORK,
+        asset: 'USDC',
+        paymentEndpoint: '/api/content/{linkId}',
+        note: 'EVM x402 (USDC on Base) via the standard x402 facilitator flow.',
       },
     ],
   });

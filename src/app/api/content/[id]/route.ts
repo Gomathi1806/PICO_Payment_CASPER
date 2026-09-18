@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from 'next/server';
 import { db } from '@/db';
+import { isUuid } from '@/lib/utils/uuid';
 import { picoLinks, users, payments, widgetViews } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { withDynamicX402 } from '@/lib/x402-config';
@@ -25,6 +26,8 @@ import { CLPublicKey } from 'casper-js-sdk';
  */
 
 async function loadLink(linkId: string) {
+  if (!isUuid(linkId)) return null;
+
   const link = await db.query.picoLinks.findFirst({
     where: (picoLinks, { eq }) => eq(picoLinks.id, linkId),
   });

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from 'next/server';
 import { db } from '@/db';
+import { isUuid } from '@/lib/utils/uuid';
 import { payments, users, widgetViews } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import {
@@ -35,6 +36,8 @@ import { getCsprUsdRate, minAcceptableMotes, usdToMotes } from '@/lib/casper/pri
  */
 
 async function loadLink(linkId: string) {
+  if (!isUuid(linkId)) return null;
+
   const link = await db.query.picoLinks.findFirst({
     where: (picoLinks, { eq }) => eq(picoLinks.id, linkId),
   });
