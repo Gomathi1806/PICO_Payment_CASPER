@@ -43,7 +43,7 @@ export default function LandingPage() {
             <div>
               <div style={{ color: 'var(--accent)', fontWeight: 'bold', marginBottom: '0.5rem' }}>01. No &ldquo;Platform Tax&rdquo;</div>
               <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                Keep 98% of your revenue. No 30% Apple tax. No high Stripe fixed fees.
+                Keep 95% of your revenue. No 30% Apple tax. No high Stripe fixed fees.
               </p>
             </div>
             

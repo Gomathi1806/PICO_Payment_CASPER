@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, use } from 'react';
+import Link from 'next/link';
 import { useConnect, useWriteContract, useAccount, useReadContract, useChainId, useSwitchChain, useDisconnect, useSendCalls } from 'wagmi';
 import { parseUnits, encodeFunctionData } from 'viem';
 import { getPicoLinkById, getCreatorWalletByLinkId, recordPayment, getUnlockedContent } from '@/app/actions/pico';
@@ -385,8 +386,52 @@ export default function PublicLinkPage(props: { params: Promise<{ id: string }> 
   };
 
 
-  if (loading) return <div style={{ textAlign: 'center', padding: '10rem 0' }}>Loading Pico...</div>;
-  if (!link) return <div style={{ textAlign: 'center', padding: '10rem 0' }}>Link not found.</div>;
+  // The link is fetched client-side, so first-time visitors wait a beat.
+  // Show the branded shell and a card skeleton rather than a bare line —
+  // the page looks like Pico from the first paint.
+  if (loading) {
+    const bar = (width: string, height: string, mb: string) => (
+      <div className="skeleton" style={{ width, height, margin: `0 auto ${mb}`, borderRadius: '8px' }} />
+    );
+    return (
+      <div className="animate-fade">
+        <header style={{ textAlign: 'center', marginBottom: '3rem', marginTop: '2rem' }}>
+          <h1 className="text-gradient" style={{ fontSize: '2rem', fontWeight: 800 }}>Pico.</h1>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '0.25rem' }}>
+            Instant content unlocks — no account needed
+          </p>
+        </header>
+        <div className="glass" style={{ padding: '2rem', textAlign: 'center' }} aria-busy="true" aria-label="Loading this Pico link">
+          {bar('40%', '0.7rem', '1.5rem')}
+          {bar('80%', '1.5rem', '1rem')}
+          {bar('95%', '0.9rem', '0.5rem')}
+          {bar('70%', '0.9rem', '2rem')}
+          <div style={{
+            background: 'rgba(255,255,255,0.02)', border: '1px solid var(--card-border)',
+            borderRadius: '16px', padding: '1.5rem',
+          }}>
+            {bar('45%', '2rem', '1.5rem')}
+            {bar('100%', '3rem', '1rem')}
+            {bar('100%', '3rem', '0')}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!link) {
+    return (
+      <div className="animate-fade" style={{ textAlign: 'center', padding: '6rem 0' }}>
+        <h1 className="text-gradient" style={{ fontSize: '2rem', fontWeight: 800 }}>Pico.</h1>
+        <p style={{ color: 'var(--text-muted)', marginTop: '1rem' }}>
+          This link doesn&rsquo;t exist, or it has been removed.
+        </p>
+        <Link href="/" className="btn btn-secondary" style={{ textDecoration: 'none', marginTop: '2rem', display: 'inline-block' }}>
+          Go to Pico
+        </Link>
+      </div>
+    );
+  }
 
   const buttonLabel = () => {
     if (isProcessing && step === 'connecting') return 'Opening wallet...';
@@ -738,7 +783,7 @@ export default function PublicLinkPage(props: { params: Promise<{ id: string }> 
         </div>
 
         <p style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>
-          Secured by Base &amp; Casper Networks &amp; X402 Protocol
+          Secured by the Casper &amp; Base networks · x402 protocol
         </p>
       </div>
 
