@@ -170,17 +170,17 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-## Learn More
+## Open source
 
-To learn more about Next.js, take a look at the following resources:
+Pico is fully open source under the [MIT licence](LICENSE) — the Next.js app, the
+PicoRouter Odra contract, the buyer and pricing agents, and the MCP server are all
+in this repository. Nothing is held back except secrets: wallet keys (`*.pem`,
+`agent/keys/`), environment files and build artefacts are gitignored, as they
+should be.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Note: `"private": true` in `package.json` is the npm flag that prevents the app
+from being published to the npm registry. It says nothing about this repository,
+which is public.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md), the
+[code of conduct](CODE_OF_CONDUCT.md) and the [security policy](SECURITY.md).
