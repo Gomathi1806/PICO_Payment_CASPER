@@ -8,6 +8,7 @@ import { base } from 'wagmi/chains';
 import { OnchainKitProvider } from '@coinbase/onchainkit';
 import '@coinbase/onchainkit/styles.css';
 import { config } from '@/lib/wagmi';
+import { CsprClickProvider } from '@/components/csprclick/CsprClickProvider';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
@@ -24,7 +25,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
               wallet: { display: 'modal' },
             }}
           >
-            {children}
+            <CsprClickProvider>{children}</CsprClickProvider>
           </OnchainKitProvider>
         </QueryClientProvider>
       </WagmiProvider>

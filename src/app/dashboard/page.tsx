@@ -11,6 +11,7 @@ import LegalFooter from '@/components/LegalFooter';
 import { calculateFeeBps } from '@/lib/constants';
 import { getUserById, updateWalletAddress } from '@/app/actions/auth';
 import { saveCasperPublicKey, setCasperUseRouter } from '@/app/actions/casper';
+import CsprClickConnect from '@/components/CsprClickConnect';
 import { PicoLink } from '@/db/schema';
 
 function timeAgo(date: Date): string {
@@ -329,6 +330,14 @@ export default function CreatorDashboard() {
                 ⚠️ {casperError}
               </div>
             )}
+
+            {/* No wallet extension? Sign in with Google or Apple through
+                CSPR.click and we save the key it gives us. */}
+            <CsprClickConnect
+              userId={userId ?? ''}
+              savedKey={casperKey}
+              onKeySaved={(key) => { setCasperKey(key); setShowCasperInput(false); }}
+            />
           </div>
         )}
       </div>
