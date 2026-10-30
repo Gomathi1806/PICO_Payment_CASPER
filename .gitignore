@@ -51,3 +51,7 @@ agent/keys/
 
 # Rust build artifacts (Odra contract)
 contracts/pico_router/target/
+
+# ticker working files
+agent/.ticker-state.json
+agent/ticker-queue.json

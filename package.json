@@ -11,7 +11,8 @@
     "agent:keygen": "node agent/keygen.js",
     "mcp": "node agent/mcp-server.js",
     "pricer": "node agent/pricer.js",
-    "agent:x402": "node agent/x402-buyer.mjs"
+    "agent:x402": "node agent/x402-buyer.mjs",
+    "ticker": "node agent/ticker.mjs"
   },
   "dependencies": {
     "@coinbase/onchainkit": "^1.1.2",
