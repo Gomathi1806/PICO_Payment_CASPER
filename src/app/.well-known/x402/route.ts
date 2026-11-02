@@ -25,6 +25,7 @@ export async function GET() {
           'GET the paymentEndpoint → HTTP 402 with { accepts: [{ payTo, amountMotes, transferId }] }',
           'Send a native CSPR transfer of amountMotes to payTo with transferId as the memo',
           'Retry the GET with header X-Casper-Deploy-Hash: <your deploy hash>',
+          '202 + Retry-After → paid, still settling on-chain. Wait and retry with the same hash; do NOT pay again',
           '200 → { contentUrl, title } once the transfer is verified on-chain',
         ],
       },

@@ -35,6 +35,9 @@ import { getCsprUsdRate, minAcceptableMotes, usdToMotes } from '@/lib/casper/pri
  * no browser, no human, machine-to-machine commerce on Casper.
  */
 
+/** How long a client should wait before retrying a settling payment. */
+const RETRY_AFTER_SECONDS = 5;
+
 async function loadLink(linkId: string) {
   if (!isUuid(linkId)) return null;
 
@@ -49,6 +52,30 @@ async function loadLink(linkId: string) {
   if (!creator?.casperPublicKey) return null;
 
   return { link, creatorCasperKey: creator.casperPublicKey };
+}
+
+/**
+ * A paid request whose deploy is still confirming on-chain.
+ *
+ * Answering this with 402 tells a client it still has to pay, which is
+ * how the same buyer ends up paying twice; a directory that bought from
+ * 6,478 x402 endpoints found 464 asking to be paid again after payment.
+ * `pending: true` is kept for older clients that look at the body.
+ */
+function pendingSettlement(message: string, deployHash: string) {
+  return NextResponse.json(
+    {
+      status: 'pending',
+      error: message,
+      pending: true,
+      deployHash,
+      retryAfterSeconds: RETRY_AFTER_SECONDS,
+    },
+    {
+      status: 202,
+      headers: { 'Retry-After': String(RETRY_AFTER_SECONDS) },
+    },
+  );
 }
 
 export async function GET(
@@ -132,16 +159,20 @@ export async function GET(
 
     if (!existing) {
       const execution = await getDeployExecution(deployHash);
+      // The payment has been made but the chain has not caught up yet.
+      // This is NOT 402: the caller owes nothing, it just has to wait,
+      // and a client that reads only the status code would pay twice.
+      // 202 + Retry-After says "accepted, still settling" instead.
       if (!execution.found) {
-        return NextResponse.json(
-          { error: 'Deploy not found on the node yet. Retry shortly.' },
-          { status: 402 },
+        return pendingSettlement(
+          'Deploy not found on the node yet. Retry shortly.',
+          deployHash,
         );
       }
       if (!execution.executed) {
-        return NextResponse.json(
-          { error: 'Deploy not executed yet. Retry shortly.', pending: true },
-          { status: 402 },
+        return pendingSettlement(
+          'Deploy not executed yet. Retry shortly.',
+          deployHash,
         );
       }
       if (!execution.success) {

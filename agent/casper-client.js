@@ -127,6 +127,14 @@ async function redeemContent(baseUrl, paymentEndpoint, deployHash, { timeoutMs =
     const res = await fetch(url, { headers: { 'X-Casper-Deploy-Hash': deployHash } });
     const body = await res.json().catch(() => ({}));
     if (res.status === 200) return body;
+    // 202 = paid, still settling. Honour Retry-After when the server
+    // sends one. The 402 branch stays for servers not yet updated.
+    if (res.status === 202) {
+      const after = Number(res.headers.get('retry-after'));
+      const waitMs = Number.isFinite(after) && after > 0 ? after * 1000 : intervalMs;
+      await new Promise((r) => setTimeout(r, waitMs));
+      continue;
+    }
     if (res.status === 402 && (body.pending || /not found|not executed|retry/i.test(body.error ?? ''))) {
       await new Promise((r) => setTimeout(r, intervalMs));
       continue;

@@ -71,6 +71,16 @@ curl https://pico.example/api/casper/content/<linkId>
 # 3. Agent retries with the deploy hash → verified on-chain → content
 curl -H "X-Casper-Deploy-Hash: <hash>" https://pico.example/api/casper/content/<linkId>
 # { "contentUrl": "…", "title": "…", "explorerUrl": "https://testnet.cspr.live/deploy/…" }
+
+# 3a. While the deploy is still confirming, that retry answers 202, not 402:
+# HTTP 202  Retry-After: 5
+# { "status": "pending", "pending": true, "deployHash": "…", "retryAfterSeconds": 5 }
+#
+# Wait and retry with the SAME hash. A 402 here would read as "pay again",
+# which is how buyers get charged twice — the most common failure found in
+# a 6,478-endpoint audit of live x402 services. Only an unpaid request,
+# or a transfer that is wrong (bad recipient, short amount, failed
+# execution), gets a 402 from this route.
 ```
 
 ## Code map
