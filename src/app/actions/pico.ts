@@ -259,26 +259,38 @@ export async function recordPayment(data: {
   }
 }
 
-// Get total earnings for a creator
+// Get total earnings for a creator, grouped by the rail that settled
+// each payment. The asset the creator actually holds and whether Pico
+// took a cut both depend on `chain`, so the dashboard needs the split
+// rather than one USD total it can only guess the currency of.
 export async function getCreatorEarnings(creatorId: string) {
   try {
-    const result = await db
+    const rows = await db
       .select({
+        chain: payments.chain,
         total: sql<string>`COALESCE(SUM(${payments.amount}), '0.00')`,
         count: sql<number>`COUNT(${payments.id})`,
       })
       .from(payments)
       .innerJoin(picoLinks, eq(payments.linkId, picoLinks.id))
-      .where(eq(picoLinks.creatorId, creatorId));
+      .where(eq(picoLinks.creatorId, creatorId))
+      .groupBy(payments.chain);
+
+    const byChain = rows.map((r) => ({
+      chain: r.chain,
+      total: r.total,
+      count: Number(r.count),
+    }));
 
     return {
       success: true,
-      totalEarnings: result[0]?.total || '0.00',
-      totalSales: result[0]?.count || 0,
+      totalEarnings: byChain.reduce((sum, r) => sum + Number(r.total), 0).toFixed(2),
+      totalSales: byChain.reduce((sum, r) => sum + r.count, 0),
+      byChain,
     };
   } catch (error) {
     console.error('Failed to fetch earnings:', error);
-    return { success: true, totalEarnings: '0.00', totalSales: 0 };
+    return { success: true, totalEarnings: '0.00', totalSales: 0, byChain: [] };
   }
 }
 
@@ -331,6 +343,7 @@ export async function getRecentActivity(creatorId: string, limit = 10) {
         linkId: payments.linkId,
         amount: payments.amount,
         txHash: payments.txHash,
+        chain: payments.chain,
         createdAt: payments.createdAt,
         title: picoLinks.title,
       })

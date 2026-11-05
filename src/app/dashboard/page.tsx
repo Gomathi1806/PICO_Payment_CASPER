@@ -14,6 +14,30 @@ import { saveCasperPublicKey, setCasperUseRouter } from '@/app/actions/casper';
 import CsprClickConnect from '@/components/CsprClickConnect';
 import { PicoLink } from '@/db/schema';
 
+// ─── Settlement rails ───────────────────────────────────────
+// payments.chain records which rail settled a sale, and what the
+// creator ends up holding depends on it: the Casper rails pay out in
+// native CSPR, the Base rails in USDC. Prices are stored in USD, so
+// every figure below is a valuation of the asset that actually moved,
+// not a USDC balance. Pico's 5% is only ever withheld on-chain — by
+// the PicoRouter contract ('…-router') or the EVM split — so a direct
+// native transfer pays the creator the full price. Gas is attached by
+// the buyer on every rail, so it is never deducted from earnings.
+type ChainTotal = { chain: string; total: string; count: number };
+
+const isCasperRail = (chain: string) => chain.startsWith('casper');
+const withholdsFee = (chain: string) => !isCasperRail(chain) || chain.endsWith('-router');
+const railAsset = (chain: string) => (isCasperRail(chain) ? 'CSPR' : 'USDC');
+
+function railLabel(chain: string): string {
+  if (chain.startsWith('casper-test')) return 'Casper Testnet';
+  if (chain.startsWith('casper')) return 'Casper Mainnet';
+  if (chain === 'base-sepolia') return 'Base Sepolia';
+  return 'Base';
+}
+
+const unique = (values: string[]) => [...new Set(values)];
+
 function timeAgo(date: Date): string {
   const s = Math.floor((Date.now() - date.getTime()) / 1000);
   if (s < 60) return `${s}s ago`;
@@ -40,6 +64,7 @@ export default function CreatorDashboard() {
   const [savingRouter, setSavingRouter] = useState(false);
   const [totalEarnings, setTotalEarnings] = useState('0.00');
   const [totalSales, setTotalSales] = useState(0);
+  const [earningsByChain, setEarningsByChain] = useState<ChainTotal[]>([]);
   const [perLinkStats, setPerLinkStats] = useState<Record<string, { sales: number; earned: string }>>({});
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
   const [gbpRate, setGbpRate] = useState(0.78);
@@ -82,6 +107,7 @@ export default function CreatorDashboard() {
       if (earningsResult.success) {
         setTotalEarnings(earningsResult.totalEarnings);
         setTotalSales(earningsResult.totalSales);
+        setEarningsByChain(earningsResult.byChain ?? []);
       }
       if (statsResult.success) setPerLinkStats(statsResult.stats);
       if (activityResult.success) setRecentActivity(activityResult.activity);
@@ -159,6 +185,25 @@ export default function CreatorDashboard() {
   const handleLogout = async () => {
     await signOut({ callbackUrl: '/' });
   };
+
+  // Gross is the USD price each sale was quoted at. Only subtract the
+  // fee for the rails that actually withheld one on-chain.
+  const grossUsd = Number(totalEarnings);
+  const withheldFeeUsd = earningsByChain
+    .filter((r) => withholdsFee(r.chain))
+    .reduce((sum, r) => sum + Number(r.total) * 0.05, 0);
+  const netUsd = grossUsd - withheldFeeUsd;
+
+  const settledAssets = unique(earningsByChain.map((r) => railAsset(r.chain)));
+  const settledRails = unique(earningsByChain.map((r) => railLabel(r.chain)));
+  const hasCasperEarnings = earningsByChain.some((r) => isCasperRail(r.chain));
+  const hasEvmEarnings = earningsByChain.some((r) => !isCasperRail(r.chain));
+
+  // Transak sells USDC, so the off-ramp can only ever offer what the
+  // EVM rail settled — CSPR earnings are not reachable from here.
+  const usdcBalanceUsd = earningsByChain
+    .filter((r) => !isCasperRail(r.chain))
+    .reduce((sum, r) => sum + Number(r.total) * 0.95, 0);
 
   if (status === 'loading' || loading) {
     return (
@@ -347,12 +392,21 @@ export default function CreatorDashboard() {
         <div className="glass" style={{ padding: '1.5rem', background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%)' }}>
           <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginBottom: '0.5rem' }}>Net Earnings</div>
           <div style={{ fontSize: '1.6rem', fontWeight: 800, lineHeight: 1.1 }}>
-            ${(Number(totalEarnings) * 0.95).toFixed(2)}
-            <span style={{ fontSize: '0.85rem', fontWeight: 400, color: 'var(--text-muted)' }}> USDC</span>
+            ${netUsd.toFixed(2)}
+            {settledAssets.length > 0 && (
+              <span style={{ fontSize: '0.85rem', fontWeight: 400, color: 'var(--text-muted)' }}>
+                {' '}worth of {settledAssets.join(' + ')}
+              </span>
+            )}
           </div>
           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-            ≈ £{(Number(totalEarnings) * 0.95 * gbpRate).toFixed(2)} GBP
+            ≈ £{(netUsd * gbpRate).toFixed(2)} GBP
           </div>
+          {settledRails.length > 0 && (
+            <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+              Priced in USD · paid on {settledRails.join(' + ')}
+            </div>
+          )}
         </div>
         <div className="glass" style={{ padding: '1.5rem' }}>
           <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginBottom: '0.5rem' }}>Total Sales</div>
@@ -372,21 +426,30 @@ export default function CreatorDashboard() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.8rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ color: 'var(--text-muted)' }}>Gross sales</span>
-              <span>${Number(totalEarnings).toFixed(2)}</span>
+              <span>${grossUsd.toFixed(2)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ color: 'var(--text-muted)' }}>Pico fee (5%)</span>
-              <span style={{ color: '#f87171' }}>−${(Number(totalEarnings) * 0.05).toFixed(3)}</span>
+              {withheldFeeUsd > 0 ? (
+                <span style={{ color: '#f87171' }}>−${withheldFeeUsd.toFixed(3)}</span>
+              ) : (
+                <span style={{ color: 'var(--text-muted)' }}>not withheld on direct transfers</span>
+              )}
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Network gas (est.)</span>
-              <span style={{ color: '#f87171' }}>−${(0.001 * totalSales).toFixed(3)}</span>
+              <span style={{ color: 'var(--text-muted)' }}>Network gas</span>
+              <span style={{ color: 'var(--text-muted)' }}>paid by the buyer</span>
             </div>
             <div style={{ height: '1px', background: 'var(--card-border)', margin: '0.4rem 0' }} />
             <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}>
               <span>Net to your wallet</span>
               <span style={{ color: 'var(--success)' }}>
-                ${(Number(totalEarnings) * 0.95 - 0.001 * totalSales).toFixed(3)}
+                ${netUsd.toFixed(3)}
+                {settledAssets.length > 0 && (
+                  <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>
+                    {' '}in {settledAssets.join(' + ')}
+                  </span>
+                )}
               </span>
             </div>
           </div>
@@ -505,7 +568,8 @@ export default function CreatorDashboard() {
             {recentActivity.map((event) => {
               const when = event.createdAt ? new Date(event.createdAt) : null;
               const ago = when ? timeAgo(when) : '';
-              const net = (Number(event.amount) * 0.95).toFixed(3);
+              const chain = event.chain ?? 'base';
+              const net = (Number(event.amount) * (withholdsFee(chain) ? 0.95 : 1)).toFixed(3);
               return (
                 <div key={event.id} style={{
                   padding: '0.75rem',
@@ -522,7 +586,7 @@ export default function CreatorDashboard() {
                       🟢 Sale ${Number(event.amount).toFixed(2)} <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>· {event.title}</span>
                     </div>
                     <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
-                      Net ${net} → your wallet · {ago}
+                      Net ${net} paid in {railAsset(chain)} on {railLabel(chain)} · {ago}
                     </div>
                   </div>
                 </div>
@@ -536,7 +600,9 @@ export default function CreatorDashboard() {
       <section style={{ marginTop: '3rem' }}>
         <div className="glass" style={{ padding: '1.5rem', textAlign: 'center' }}>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
-            Earnings are instantly settled on Base. Cash out via Ramp, Coinbase Card, or manual transfer.
+            {hasCasperEarnings
+              ? `Your CSPR earnings settle straight to your Casper wallet — cash those out through a CSPR exchange. The options below move USDC on Base${hasEvmEarnings ? '' : ' only'}.`
+              : 'USDC earnings are instantly settled on Base. Cash out via Ramp, Coinbase Card, or manual transfer.'}
           </p>
           <button
             className="btn btn-secondary"
@@ -628,7 +694,7 @@ export default function CreatorDashboard() {
                       className="btn btn-primary"
                       style={{ width: '100%', padding: '0.75rem', fontSize: '0.85rem' }}
                     >
-                      💸 Cash out ${totalEarnings} USDC
+                      💸 Cash out ${usdcBalanceUsd.toFixed(2)} USDC
                     </button>
                   ) : (
                     <div style={{ fontSize: '0.75rem', color: '#f87171' }}>Connect a wallet first to cash out.</div>
