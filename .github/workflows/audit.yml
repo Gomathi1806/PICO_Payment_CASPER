@@ -1,0 +1,91 @@
+# Security and correctness gates for both payment rails.
+#
+# There is no Odra- or Casper-specific static analyser, so the Casper
+# router is covered by Rust-native tooling (clippy as a lint gate, the
+# Odra test backend, and RUSTSEC advisories on the dependency tree).
+# Slither covers the Solidity router, which targets Base.
+#
+# None of this replaces a third-party audit before mainnet — it only
+# keeps regressions from reaching one.
+
+name: audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    name: web app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Types
+        run: npx tsc --noEmit
+      - name: Lint
+        run: npx eslint src
+      - name: Dependency advisories
+        # Reported, not gated: a transitive advisory with no fix
+        # available should not block a payment fix from shipping.
+        continue-on-error: true
+        run: npm audit --audit-level=high
+
+  casper-router:
+    name: casper router (Odra/Rust)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts/pico_router
+    steps:
+      - uses: actions/checkout@v4
+      # rust-toolchain pins nightly-2026-01-01; rustup honours it.
+      - name: Toolchain
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup component add clippy
+      - name: Lint
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Tests
+        run: cargo test
+      - name: RUSTSEC advisories
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit
+
+  solidity-router:
+    name: solidity router (Slither)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Slither
+        run: pip install slither-analyzer solc-select
+      - name: Pin solc
+        run: |
+          solc-select install 0.8.24
+          solc-select use 0.8.24
+      - name: Slither
+        # Findings are published to the Security tab rather than
+        # failing the job, so the baseline stays visible while
+        # PicoRouter.sol is still unused and unaudited.
+        continue-on-error: true
+        run: slither contracts/PicoRouter.sol --sarif slither.sarif
+      - uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: slither.sarif
+          category: slither

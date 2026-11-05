@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn splits_95_5() {
-        let (env, mut contract) = setup();
+        let (env, contract) = setup();
         let creator = env.get_account(1);
         let treasury = env.get_account(9);
         let creator_before = env.balance_of(&creator);
@@ -165,7 +165,7 @@ mod tests {
 
     #[test]
     fn emits_receipt() {
-        let (env, mut contract) = setup();
+        let (env, contract) = setup();
         let creator = env.get_account(1);
         let payer = env.get_account(0);
 
@@ -215,7 +215,7 @@ mod tests {
     fn zero_fee_router_sends_everything_to_creator() {
         let env = odra_test::env();
         let treasury = env.get_account(9);
-        let mut contract = PicoRouter::deploy(
+        let contract = PicoRouter::deploy(
             &env,
             PicoRouterInitArgs { treasury, fee_bps: 0 },
         );

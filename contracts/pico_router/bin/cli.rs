@@ -9,7 +9,7 @@
 use odra::host::HostEnv;
 use pico_router::pico_router::{PicoRouter, PicoRouterInitArgs};
 use odra_cli::{
-    deploy::DeployScript, ContractProvider, DeployedContractsContainer, DeployerExt, OdraCli,
+    deploy::DeployScript, DeployedContractsContainer, DeployerExt, OdraCli,
 };
 
 /// Deploys PicoRouter with a 5% fee. The deployer account doubles as
