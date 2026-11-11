@@ -3,7 +3,8 @@ import { db } from '@/db';
 import { isUuid } from '@/lib/utils/uuid';
 import { picoLinks, users, payments, widgetViews } from '@/db/schema';
 import { eq } from 'drizzle-orm';
-import { withDynamicX402 } from '@/lib/x402-config';
+import { withDynamicX402, settlementChainLabel } from '@/lib/x402-config';
+import type { SettleResponse } from '@x402/core/types';
 import { CLPublicKey } from 'casper-js-sdk';
 
 /**
@@ -63,33 +64,22 @@ async function loadLink(linkId: string) {
   };
 }
 
+/** What the resolver hands back to onSettled so it needs no second query. */
+type UnlockMeta = { linkId: string; priceUsd: string };
+
+/** Pull the link id out of /api/content/[id] — withDynamicX402 wraps us,
+ *  so we never get `params`. */
+function linkIdFromUrl(url: string): string {
+  const segments = new URL(url).pathname.split('/').filter(Boolean);
+  return segments[segments.length - 1];
+}
+
 const handler = async (req: NextRequest) => {
-  // We don't get params directly here because withDynamicX402 wraps us.
-  // Pull the id from the URL pathname.
-  const segments = new URL(req.url).pathname.split('/').filter(Boolean);
-  const id = segments[segments.length - 1];
+  const id = linkIdFromUrl(req.url);
 
   const loaded = await loadLink(id);
   if (!loaded) {
     return NextResponse.json({ error: 'Link not found.' }, { status: 404 });
-  }
-
-  // Record the unlock so the dashboard activity feed picks it up.
-  // The X-Payment header is settled by the facilitator before we
-  // reach here, so it's safe to assume the tx hash and payer address
-  // can be derived from the request — but @x402/next doesn't surface
-  // those cleanly, so for now we record with placeholders and rely
-  // on the on-chain tx for ground truth. A future revision can call
-  // facilitator.settle directly to capture the txHash.
-  try {
-    await db.insert(payments).values({
-      linkId: id,
-      txHash: req.headers.get('x-payment-tx') || 'x402:pending',
-      payerAddress: req.headers.get('x-payment-from') || 'x402:unknown',
-      amount: loaded.link.price,
-    });
-  } catch (e) {
-    console.warn('[pico/x402] payment record insert failed:', e);
   }
 
   return NextResponse.json({
@@ -99,9 +89,46 @@ const handler = async (req: NextRequest) => {
   });
 };
 
-export const GET = withDynamicX402(handler, async (req) => {
-  const segments = new URL(req.url).pathname.split('/').filter(Boolean);
-  const id = segments[segments.length - 1];
+/**
+ * Record the unlock once the facilitator has settled, so the dashboard
+ * activity feed picks it up with the real on-chain hash.
+ *
+ * This used to run inside the handler with `tx_hash: 'x402:pending'` and
+ * `payer_address: 'x402:unknown'`, because @x402/next doesn't hand the
+ * settlement to the handler — and the handler runs BEFORE settlement, so
+ * a payment that failed to settle still got a row. withDynamicX402 now
+ * decodes the PAYMENT-RESPONSE header and calls us only on success, with
+ * the transaction hash, the payer and the network that actually paid.
+ */
+async function recordSettlement(settle: SettleResponse, meta: UnlockMeta | undefined) {
+  if (!meta) return;
+
+  const chain = settlementChainLabel(settle.network);
+  try {
+    // One settlement, one row: a client retrying the same X-Payment
+    // header must not be billed a second row.
+    const existing = await db.query.payments.findFirst({
+      where: (payments, { and, eq }) => and(
+        eq(payments.linkId, meta.linkId),
+        eq(payments.txHash, settle.transaction),
+      ),
+    });
+    if (existing) return;
+
+    await db.insert(payments).values({
+      linkId: meta.linkId,
+      txHash: settle.transaction,
+      payerAddress: settle.payer ?? 'x402:unknown',
+      amount: meta.priceUsd,
+      chain,
+    });
+  } catch (e) {
+    console.warn('[pico/x402] payment record insert failed:', e);
+  }
+}
+
+export const GET = withDynamicX402<UnlockMeta>(handler, async (req) => {
+  const id = linkIdFromUrl(req.url);
   const loaded = await loadLink(id);
   if (!loaded) return null; // 404 path runs through the unguarded handler
 
@@ -130,5 +157,6 @@ export const GET = withDynamicX402(handler, async (req) => {
     payTo: loaded.creatorWallet,
     description: `Unlock: ${loaded.link.title}`,
     casperPayTo: loaded.casperPayTo,
+    meta: { linkId: id, priceUsd: loaded.link.price },
   };
-});
+}, recordSettlement);

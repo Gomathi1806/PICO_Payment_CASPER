@@ -1,9 +1,11 @@
 import { createFacilitatorConfig } from '@coinbase/x402';
 import { HTTPFacilitatorClient, x402ResourceServer } from '@x402/core/server';
+import { decodePaymentResponseHeader } from '@x402/core/http';
+import type { SettleResponse } from '@x402/core/types';
 import { ExactEvmScheme } from '@x402/evm/exact/server';
 import { ExactCasperScheme } from '@make-software/casper-x402/exact/server';
 import { withX402 } from '@x402/next';
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { ACTIVE_CASPER_NETWORK } from '@/lib/casper/config';
 import { getCsprUsdRate } from '@/lib/casper/price';
 
@@ -33,6 +35,28 @@ const NETWORK_ALIAS: Record<string, 'eip155:8453' | 'eip155:84532'> = {
 export const DEFAULT_NETWORK = (NETWORK_ALIAS[
   (process.env.X402_NETWORK?.trim() || 'base-sepolia').toLowerCase()
 ] ?? 'eip155:84532') as string;
+
+/**
+ * CAIP-2 network id → the short label the `payments.chain` column uses
+ * ('base' | 'base-sepolia' | 'casper' | 'casper-test'). The facilitator
+ * answers in CAIP-2; the dashboard groups earnings by this label, so a
+ * WCSPR settlement has to come back as 'casper-test', not 'base'.
+ * Unknown networks are stored verbatim rather than guessed at.
+ */
+export function settlementChainLabel(network: string): string {
+  switch (network) {
+    case 'eip155:8453':
+      return 'base';
+    case 'eip155:84532':
+      return 'base-sepolia';
+    case 'casper:casper':
+      return 'casper';
+    case 'casper:casper-test':
+      return 'casper-test';
+    default:
+      return network;
+  }
+}
 
 // ─── Casper x402 (standard scheme via CSPR.cloud facilitator) ──
 // The official Casper x402 facilitator settles CEP-18 payments
@@ -142,6 +166,21 @@ export async function ensureX402Ready() {
   }
 }
 
+/** Per-request paywall config returned by `withDynamicX402`'s resolver. */
+export interface DynamicPaywallConfig<M = undefined> {
+  price: string;
+  /** EVM payout address — omit/null for Casper-only creators */
+  payTo: `0x${string}` | null;
+  description: string;
+  /** '00'-prefixed Casper account hash — adds a WCSPR option when set */
+  casperPayTo?: string | null;
+  /**
+   * Anything the resolver already looked up and `onSettled` will need —
+   * handed straight back so recording a settlement costs no second query.
+   */
+  meta?: M;
+}
+
 /**
  * Wraps a Next.js route handler with an x402 paywall whose `payTo` and
  * `price` are computed per request. The wrapped handler only runs after
@@ -152,20 +191,18 @@ export async function ensureX402Ready() {
  * `resolve` is called once per request and returns the per-request
  * paywall config (or null to bypass the paywall entirely — used to
  * return free preview content for visitors who haven't paid yet).
+ *
+ * `onSettled` is called once the facilitator has actually settled, with
+ * the decoded settlement — real transaction hash, payer and network.
+ * The handler itself runs BEFORE settlement, so anything that wants the
+ * on-chain truth (recording the payment, crediting the creator) belongs
+ * here and not in the handler: a settlement that fails never fires it.
+ * It runs in `after()`, so it never delays the paid response.
  */
-export function withDynamicX402(
+export function withDynamicX402<M = undefined>(
   handler: (req: NextRequest) => Promise<NextResponse>,
-  resolve: (req: NextRequest) => Promise<
-    | {
-        price: string;
-        /** EVM payout address — omit/null for Casper-only creators */
-        payTo: `0x${string}` | null;
-        description: string;
-        /** '00'-prefixed Casper account hash — adds a WCSPR option when set */
-        casperPayTo?: string | null;
-      }
-    | null
-  >,
+  resolve: (req: NextRequest) => Promise<DynamicPaywallConfig<M> | null>,
+  onSettled?: (settle: SettleResponse, meta: M | undefined) => Promise<void>,
 ) {
   return async function (req: NextRequest) {
     try {
@@ -239,7 +276,30 @@ export function withDynamicX402(
         false,
       );
 
-      return await wrapped(req);
+      const response = await wrapped(req);
+
+      // withX402 settles after the handler returns a <400 response and
+      // puts the result in the PAYMENT-RESPONSE header (X-PAYMENT-RESPONSE
+      // on v1 clients). Decoding it here is the only place the resource
+      // server sees the settled transaction hash.
+      if (onSettled) {
+        const header =
+          response.headers.get('PAYMENT-RESPONSE') ??
+          response.headers.get('X-PAYMENT-RESPONSE');
+        if (header) {
+          after(async () => {
+            try {
+              const settle = decodePaymentResponseHeader(header);
+              if (settle.success) await onSettled(settle, config.meta);
+              else console.warn('[pico/x402] settlement reported failure:', settle.errorReason);
+            } catch (e) {
+              console.error('[pico/x402] could not record settlement:', e);
+            }
+          });
+        }
+      }
+
+      return response;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       console.error('[pico/x402] handler failed:', error);
