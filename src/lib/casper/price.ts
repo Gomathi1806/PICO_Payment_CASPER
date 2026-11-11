@@ -17,16 +17,34 @@ let cache: { rate: number; ts: number } | null = null;
 export async function getCsprUsdRate(): Promise<number> {
   if (cache && Date.now() - cache.ts < 60_000) return cache.rate;
   try {
+    // `no-store`, not `next: { revalidate: 60 }`: the Next.js data cache
+    // outlives the function instance and answers a stale entry first,
+    // refreshing it in the background. On a quiet site that made the
+    // first quote after an idle spell hours (once a day) old. The
+    // in-memory cache above already limits us to one call a minute.
     const res = await fetch(
       'https://api.coingecko.com/api/v3/simple/price?ids=casper-network&vs_currencies=usd',
-      { next: { revalidate: 60 } },
+      { cache: 'no-store' },
     );
+    if (!res.ok) throw new Error(`coingecko HTTP ${res.status}`);
     const json = await res.json();
     const rate = Number(json?.['casper-network']?.usd);
     if (!rate || !Number.isFinite(rate) || rate <= 0) throw new Error('bad rate');
+    console.log(
+      `[cspr-price] fresh rate=${rate} prev=${cache?.rate ?? 'none'} prevAgeSec=${
+        cache ? Math.round((Date.now() - cache.ts) / 1000) : 'n/a'
+      }`,
+    );
     cache = { rate, ts: Date.now() };
     return rate;
-  } catch {
+  } catch (err) {
+    // Still answer, but say so: a quote built from this rate may be old.
+    const ageSec = cache ? Math.round((Date.now() - cache.ts) / 1000) : null;
+    console.warn(
+      `[cspr-price] fetch failed (${err instanceof Error ? err.message : err}); using ${
+        cache ? `cached rate=${cache.rate} ageSec=${ageSec}` : `fallback rate=${FALLBACK_RATE}`
+      }`,
+    );
     return cache?.rate ?? FALLBACK_RATE;
   }
 }
