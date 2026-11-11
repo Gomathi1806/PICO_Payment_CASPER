@@ -17,7 +17,8 @@
 // anything by itself: it only drafts.
 //
 // On-chain truth beats the database — a row is only queued once its
-// deploy is found executed on the node, so a post can never claim a
+// hash is found executed on the node (as a Deploy or as a Version1
+// transaction), so a post can never claim a
 // payment that did not happen.
 
 import fs from 'node:fs';
@@ -67,31 +68,42 @@ function databaseUrl() {
 
 // ─── On-chain check ─────────────────────────────────────────
 
-/** True when the node has this deploy executed without error. */
-async function deployExecuted(hash) {
-  const body = {
-    jsonrpc: '2.0',
-    id: 1,
-    method: 'info_get_transaction',
-    params: { transaction_hash: { Deploy: hash } },
-  };
-  try {
-    const res = await fetch(RPC, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const json = await res.json();
-    const info = json?.result?.execution_info;
-    if (!info) return null;
-    const result = info.execution_result ?? {};
-    const inner = result.Version2 ?? result.Version1 ?? {};
-    if (inner.error_message) return null;
-    return { blockHeight: info.block_height ?? null };
-  } catch (e) {
-    console.warn(`  ! node lookup failed for ${hash.slice(0, 10)}…: ${e.message}`);
-    return null;
+/**
+ * Looks the hash up on the node and returns { blockHeight, kind } when
+ * it executed without error, else null.
+ *
+ * A hash can be one of two things on Casper 2.0. A native transfer from
+ * the wallet or the buyer agent is a legacy Deploy. An x402 settlement
+ * submitted by the facilitator is a Version1 transaction, and the node
+ * answers "no such deploy" if you ask for it as a Deploy — so try both.
+ */
+async function executedOnChain(hash) {
+  for (const kind of ['Deploy', 'Version1']) {
+    const body = {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'info_get_transaction',
+      params: { transaction_hash: { [kind]: hash } },
+    };
+    try {
+      const res = await fetch(RPC, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      const info = json?.result?.execution_info;
+      if (!info) continue;
+      const result = info.execution_result ?? {};
+      const inner = result.Version2 ?? result.Version1 ?? {};
+      if (inner.error_message) return null;
+      return { blockHeight: info.block_height ?? null, kind };
+    } catch (e) {
+      console.warn(`  ! node lookup failed for ${hash.slice(0, 10)}…: ${e.message}`);
+      return null;
+    }
   }
+  return null;
 }
 
 // ─── Post copy ──────────────────────────────────────────────
@@ -109,7 +121,11 @@ const HUMAN_TEMPLATES = [
   ({ title, usd }) => `${usd} paid for "${title}" — one tap, no account.`,
 ];
 
-/** Public keys we know belong to our own buyer agent. */
+/**
+ * Identifiers we know belong to our own buyer agent. A native transfer
+ * records the payer's public key; an x402 settlement records its
+ * account hash ("00" + 32 bytes), so both forms go in the set.
+ */
 function agentKeys() {
   const fromEnv = (process.env.PICO_AGENT_PUBLIC_KEYS || '')
     .split(',').map((k) => k.trim().toLowerCase()).filter(Boolean);
@@ -117,7 +133,9 @@ function agentKeys() {
   try {
     const require = createRequire(import.meta.url);
     const client = require('./casper-client.js');
-    keys.add(client.loadKeys().publicKey.toHex().toLowerCase());
+    const publicKey = client.loadKeys().publicKey;
+    keys.add(publicKey.toHex().toLowerCase());
+    keys.add(`00${Buffer.from(publicKey.toAccountHash()).toString('hex')}`);
   } catch {
     // No keypair on this machine — env list (or nothing) still applies.
   }
@@ -129,17 +147,24 @@ function agentKeys() {
  * can check the claim in a click, which is what makes these worth
  * posting at all.
  */
-function draftPost(payment, index, isAgent) {
+function draftPost(payment, index, isAgent, kind) {
   const usd = `$${Number(payment.amount).toFixed(2)}`;
   const title = (payment.title || 'a Pico link').slice(0, 60);
   const templates = isAgent ? AGENT_TEMPLATES : HUMAN_TEMPLATES;
   const lead = templates[index % templates.length]({ title, usd });
   const network = IS_TESTNET ? 'Casper testnet' : 'Casper mainnet';
-  const line = isAgent
-    ? `Quote → payment → unlock, in one request. Settled on ${network}.`
-    : `Paid in CSPR, verified on-chain before it opened. ${network}.`;
+  // Version1 = an x402 settlement: the payer signed for WCSPR and the
+  // facilitator submitted it. The explorer serves these under
+  // /transaction/, not /deploy/.
+  const viaX402 = kind === 'Version1';
+  const line = viaX402
+    ? `Paid in WCSPR over x402. The facilitator settled it and paid the gas. ${network}.`
+    : isAgent
+      ? `Quote → payment → unlock, in one request. Settled on ${network}.`
+      : `Paid in CSPR, verified on-chain before it opened. ${network}.`;
+  const link = `${EXPLORER}/${viaX402 ? 'transaction' : 'deploy'}/${payment.tx_hash}`;
 
-  return [lead, '', line, '', `${EXPLORER}/deploy/${payment.tx_hash}`].join('\n');
+  return [lead, '', line, '', link].join('\n');
 }
 
 // ─── State ──────────────────────────────────────────────────
@@ -184,32 +209,45 @@ async function main() {
   const queue = readJson(QUEUE_PATH, []);
   const drafted = [];
   let newest = state.lastSeen;
+  // The watermark must not pass a payment we could not verify yet, or
+  // the next run would never look at it again. Hold it there for a
+  // day, then let the row go so one bad hash cannot block the queue.
+  let held = false;
+  const HOLD_MS = 24 * 60 * 60 * 1000;
 
   for (const row of rows) {
     const created = new Date(row.created_at).toISOString();
-    if (!newest || created > newest) newest = created;
+    const advance = () => {
+      if (!held && (!newest || created > newest)) newest = created;
+    };
 
     const short = `${row.tx_hash.slice(0, 10)}…`;
 
     if (alreadyQueued.has(row.tx_hash)) {
       console.log(`  ⏭  ${short} already queued`);
+      advance();
       continue;
     }
     // Only native-CSPR deploys are verifiable this way; EVM rows and
     // the x402 placeholders are skipped rather than guessed at.
     if (!/^[0-9a-f]{64}$/i.test(row.tx_hash)) {
       console.log(`  ⏭  ${short} not a Casper deploy hash (${row.chain})`);
+      advance();
       continue;
     }
 
-    const onChain = await deployExecuted(row.tx_hash);
+    const onChain = await executedOnChain(row.tx_hash);
     if (!onChain) {
-      console.log(`  ⏭  ${short} not found executed on-chain yet`);
+      const recent = Date.now() - new Date(created).getTime() < HOLD_MS;
+      console.log(`  ⏭  ${short} not found executed on-chain${recent ? ' yet — will retry next run' : ''}`);
+      if (recent) held = true;
+      else advance();
       continue;
     }
+    advance();
 
     const isAgent = agents.has((row.payer_address || '').toLowerCase());
-    const post = draftPost(row, drafted.length + queue.length, isAgent);
+    const post = draftPost(row, drafted.length + queue.length, isAgent, onChain.kind);
     drafted.push({
       byAgent: isAgent,
       txHash: row.tx_hash,
@@ -218,12 +256,13 @@ async function main() {
       payer: row.payer_address,
       chain: row.chain,
       blockHeight: onChain.blockHeight,
+      rail: onChain.kind === 'Version1' ? 'x402' : 'native',
       settledAt: created,
       draftedAt: new Date().toISOString(),
       post,
       posted: false,
     });
-    console.log(`  ✅ ${short} queued — ${isAgent ? 'agent' : 'human'} payment (block ${onChain.blockHeight})`);
+    console.log(`  ✅ ${short} queued — ${isAgent ? 'agent' : 'human'} payment, ${onChain.kind === 'Version1' ? 'x402' : 'native'} (block ${onChain.blockHeight})`);
   }
 
   if (drafted.length === 0) {
