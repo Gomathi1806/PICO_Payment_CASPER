@@ -110,10 +110,16 @@ async function executedOnChain(hash) {
 
 // Who paid decides what we can honestly claim. An agent payment is
 // the interesting one, but a human unlock must never be posted as one.
+//
+// The chain tells us the payer was our buyer agent's key. It does not
+// tell us who started the run: a scheduled job and someone typing
+// `npm run agent` look identical. So the copy says the agent paid and
+// stops there — no "autonomous", "unattended" or "no human in the
+// loop". Add that by hand, per post, only when you know it is true.
 const AGENT_TEMPLATES = [
-  ({ title, usd }) => `An AI agent just paid ${usd} for "${title}". No human in the loop.`,
-  ({ title, usd }) => `${usd}, agent to creator, unattended. Content: "${title}".`,
-  ({ title, usd }) => `Another autonomous buy: ${usd} for "${title}".`,
+  ({ title, usd }) => `Our buyer agent just paid ${usd} for "${title}".`,
+  ({ title, usd }) => `${usd}, agent to creator. Content: "${title}".`,
+  ({ title, usd }) => `Another agent buy: ${usd} for "${title}".`,
 ];
 
 const HUMAN_TEMPLATES = [
