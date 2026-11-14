@@ -37,9 +37,13 @@ export default function CreateNewLink() {
   // Auto-pick the content type when the creator pastes a recognisable
   // URL (YouTube → Video, .pdf → PDF, etc.). Skipped once they manually
   // change the type, so we never override an explicit choice.
+  // Suppression, not a fix: React's sanctioned replacement is adjusting state
+  // during render against a "previous value" state, which is a behavioural
+  // change to a live form. Worth doing deliberately, not inside a lint sweep.
   React.useEffect(() => {
     if (!typeAutoSet || !contentUrl) return;
     const detected = detectedKindToType(detectContent(contentUrl).kind);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (detected && detected !== type) setType(detected);
   }, [contentUrl, typeAutoSet, type]);
 

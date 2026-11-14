@@ -25,11 +25,15 @@ export default function EmbedTester({ link }: { link: Link }) {
   const [platform, setPlatform] = useState<Platform>('html');
   const [publication, setPublication] = useState('The Daily Ledger');
   const [previewWords, setPreviewWords] = useState(80);
-  const [origin, setOrigin] = useState<string>('');
-
-  React.useEffect(() => {
-    if (typeof window !== 'undefined') setOrigin(window.location.origin);
-  }, []);
+  // Read the browser origin after hydration without a state-setting effect.
+  // The server snapshot is '' so SSR and the first client render agree; the
+  // client snapshot then supplies the real value. subscribe() is a no-op
+  // because location.origin cannot change without a navigation.
+  const origin = React.useSyncExternalStore(
+    () => () => {},
+    () => window.location.origin,
+    () => '',
+  );
 
   const snippet = useMemo(() => buildSnippet({
     linkId: link.id, price: link.price, title: link.title,

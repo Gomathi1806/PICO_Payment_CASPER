@@ -28,13 +28,18 @@ export default function AgentsDashboard() {
 
   const [loading, setLoading] = useState(true);
   const [handle, setHandle] = useState<string | null>(null);
-  const [origin, setOrigin] = useState<string>('');
+  // Read the browser origin after hydration without a state-setting effect.
+  // The server snapshot is '' so SSR and the first client render agree; the
+  // client snapshot then supplies the real value. subscribe() is a no-op
+  // because location.origin cannot change without a navigation.
+  const origin = React.useSyncExternalStore(
+    () => () => {},
+    () => window.location.origin,
+    () => '',
+  );
 
   const userId = session?.user?.id;
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') setOrigin(window.location.origin);
-  }, []);
 
   useEffect(() => {
     if (!userId) return;

@@ -40,9 +40,11 @@ export default function EditPicoLink(props: { params: Promise<{ id: string }> })
   const userId = session?.user?.id;
   const descriptionHasUrl = useMemo(() => URL_REGEX.test(description), [description]);
 
+  // Suppression, not a fix — see the matching effect in dashboard/new/page.tsx.
   useEffect(() => {
     if (!typeAutoSet || !contentUrl) return;
     const detected = detectedKindToType(detectContent(contentUrl).kind);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (detected && detected !== type) setType(detected);
   }, [contentUrl, typeAutoSet, type]);
 

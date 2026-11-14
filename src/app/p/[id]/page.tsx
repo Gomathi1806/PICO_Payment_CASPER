@@ -78,7 +78,9 @@ export default function PublicLinkPage(props: { params: Promise<{ id: string }> 
       try {
         const result = await getPicoLinkById(id);
         if (result.success && result.link) {
-          setLink(result.link as any); // Cast because of Date serialization
+          // The action serialises createdAt to a string before crossing the
+          // server boundary, so the shape is PicoLink-with-string-dates.
+          setLink(result.link as unknown as PicoLink);
 
           // Fetch creator's wallet address
           const walletResult = await getCreatorWalletByLinkId(id);
@@ -97,6 +99,13 @@ export default function PublicLinkPage(props: { params: Promise<{ id: string }> 
 
   // Once connected after user tapped "Pay", execute transaction ONLY if balance is sufficient.
   // Otherwise drop the user into the "add funds" state instead of opening the wallet to fail.
+  // Suppressions, not fixes. This effect is the hinge of the pay flow: it
+  // fires once the wallet reports connected and decides between opening the
+  // wallet and dropping the user into "add funds". `executePay` is declared
+  // below, and the two setState calls are the whole point of the else branch.
+  // Rewriting it as render-phase state adjustment is a real refactor of the
+  // payment path and should be done with the UI in front of you, not blind.
+  /* eslint-disable react-hooks/immutability, react-hooks/set-state-in-effect */
   useEffect(() => {
     if (isConnected && step === 'connecting') {
       if (isBalanceSufficient) {
@@ -108,6 +117,7 @@ export default function PublicLinkPage(props: { params: Promise<{ id: string }> 
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected, step, isBalanceSufficient]);
+  /* eslint-enable react-hooks/immutability, react-hooks/set-state-in-effect */
 
   const executePay = async () => {
     if (!link || !creatorWallet) return;
@@ -322,8 +332,12 @@ export default function PublicLinkPage(props: { params: Promise<{ id: string }> 
 
   // Check the Pico-funded "free first unlock" eligibility once we know
   // the wallet address. Independent of balance — additive to the pay flow.
+  // Suppression, not a fix: clearing eligibility when the wallet disconnects
+  // is a reset, and the async branch below sets it too. Same caveat as the
+  // pay-flow effect above — worth revisiting with the UI available.
   useEffect(() => {
     if (!address) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFreeUnlockEligible(false);
       return;
     }
