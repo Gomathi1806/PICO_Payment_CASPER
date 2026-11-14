@@ -31,26 +31,48 @@ That matters less for our contract law and more for who demands an invoice.
 
 **For Pico:** the creator is always the human receiving money. On the payer
 side it is whoever controls the agent's key. We should design for model 2,
-because businesses will not let an agent hold unrestricted funds — but see the
-next section for what we can actually test against this quarter.
+because businesses will not let an agent hold unrestricted funds — and on
+Casper, as section 2 sets out, models 2 and 3 already exist at the contract
+level, so this is not a bet on a future protocol feature.
 
 ## 2. What Casper supports today
 
-**Scoped keys are not shipped on Casper.** The Casper Manifest (12 May 2026)
-lists Smart Accounts — protocol-native account abstraction, session keys with
-time-bounded permissions, programmable spending limits, "AI Agent accounts with
-limited scope permissions" — as a **roadmap item targeted 2026/2027**. The
-near-term list is x402 micropayments, then EVM compatibility and compliant
-security tokens. Smart Accounts are not in it, and the protocol enhancement
-proposals that would specify the permission model have not been published.
+There are two separate questions here, and conflating them gives the wrong
+answer.
+
+**At the protocol level, scoped keys are not shipped.** The Casper Manifest
+(12 May 2026) lists Smart Accounts — protocol-native account abstraction,
+session keys with time-bounded permissions, programmable spending limits, "AI
+Agent accounts with limited scope permissions" — as a **roadmap item targeted
+2026/2027**. The near-term list is x402 micropayments, then EVM compatibility
+and compliant security tokens. Smart Accounts are not in it, and the protocol
+enhancement proposals that would specify the permission model have not been
+published.
 
 Source: [casper.network/roadmap](https://www.casper.network/roadmap). Most
 secondary coverage is sponsored press release material, so treat announced
 timings as promotional.
 
-**Consequence:** on Casper today, every payer is model 1. Model 2 is what we
-design *toward*. We should not block on it, and we should not claim support for
-it.
+**At the contract level, models 2 and 3 already work.** Chainleash — one of the
+five teams Casper announced into the Forward directory on 12 Nov 2026 — runs an
+agent that stakes CSPR under rules enforced by a Casper contract: validator
+allowlists, **spending caps**, a **human co-sign on large moves**, and
+withdrawals only the owner controls. No account abstraction required.
+
+So the honest position is not "model 1 only". It is: **a payer who wants limits
+has to get them from a contract they deploy or use, not from their account.**
+Nothing in Pico needs to change for that — a contract-controlled payer still
+signs an authorization like any other — but it does mean models 2 and 3 are
+real counterparties today rather than a 2027 hypothetical, and the gaps in
+sections 5 and 6 are live problems rather than future-proofing.
+
+**Worth watching in the same cohort:** Veridex describes itself as open-source
+rails for AI agent payments — identity, spending controls, service discovery and
+verifiable transactions across several chains. That overlaps our
+`/api/casper/discover` and the principal-vs-agent problem in section 6 directly;
+it is either the closest competitor or the most useful integration. CSPR402 is
+also listed among the existing Forward teams and the name suggests overlap with
+our rail. Neither has been assessed.
 
 ## 3. What is already custody-neutral
 
@@ -141,6 +163,12 @@ default we are inheriting, not a constraint. We can set it per resource.
 Irrelevant while we sell $0.05 articles. Decisive if agent-first means selling
 $50 datasets, which is where the directory volume actually is.
 
+**This is no longer hypothetical.** Chainleash ships a human co-sign on large
+moves on Casper today (section 2), so a payer whose owner must approve a
+purchase is a counterparty we can actually meet — and our 300-second window
+would reject them. This should move up the order of work the moment we price
+anything above pocket change.
+
 ## 6. Gap three — we record the agent, not the principal
 
 We write `payer_address` from the settlement response. Under models 2 and 3
@@ -193,9 +221,11 @@ charges them. Neither of us has to build the other.
 1. **No code has changed.** This note is analysis against the repo as it stands
    on 14 Nov 2026. Line references are to `src/lib/casper/price.ts` and the
    live `402` response from `casper.picomicropay.nl`.
-2. **Model 2 is untestable on Casper today**, so anything we build for scoped
-   keys is built against a spec that has not been published. Design for it;
-   do not claim it works.
+2. ~~**Model 2 is untestable on Casper today.**~~ **Corrected 14 Nov.** That was
+   true only of protocol-native Smart Accounts. Chainleash enforces spending
+   caps and human co-sign through a Casper contract right now, so models 2 and
+   3 are testable against a real counterparty — just not via account
+   abstraction. See section 2.
 3. ~~**Step 1 is verified for shape, not for settlement.**~~ **Settled.** The
    agent key was topped up (wrapped to 10.666334222 WCSPR) and link A was
    bought end-to-end against a local build carrying the new fields:
