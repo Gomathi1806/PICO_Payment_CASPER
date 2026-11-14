@@ -7,7 +7,7 @@ import { ExactCasperScheme } from '@make-software/casper-x402/exact/server';
 import { withX402 } from '@x402/next';
 import { NextRequest, NextResponse, after } from 'next/server';
 import { ACTIVE_CASPER_NETWORK } from '@/lib/casper/config';
-import { getCsprUsdRate } from '@/lib/casper/price';
+import { getCsprUsdQuote } from '@/lib/casper/price';
 
 /**
  * x402 facilitator setup.
@@ -141,12 +141,27 @@ export async function ensureX402Ready() {
         .registerAsset(CASPER_CAIP2, wcspr, 9)
         .registerMoneyParser(async (usd, network) => {
           if (network !== CASPER_CAIP2) return null;
-          const rate = await getCsprUsdRate();
+          const { rate, ageSec, source } = await getCsprUsdQuote();
           const wcsprAmount = Number(usd) / rate;
           return {
             asset: wcspr,
             amount: wcsprAmount.toFixed(9),
-            extra: { name: 'Wrapped CSPR', symbol: 'WCSPR', version: '1', decimals: '9' },
+            // `name` and `version` feed the EIP-712 domain — buildDomain()
+            // reads them positionally — so they must not change. The rate
+            // fields below are additive provenance for agents: our price is
+            // fixed in USD, so the WCSPR amount moves with CSPR. An agent
+            // paying under a token-denominated spending cap can use the rate
+            // and its age to size headroom instead of guessing.
+            extra: {
+              name: 'Wrapped CSPR',
+              symbol: 'WCSPR',
+              version: '1',
+              decimals: '9',
+              priceUsd: String(usd),
+              rateUsd: String(rate),
+              rateAgeSec: String(ageSec),
+              rateSource: source,
+            },
           };
         });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
