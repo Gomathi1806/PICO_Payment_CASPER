@@ -13,9 +13,36 @@ const FALLBACK_RATE = Number(process.env.CASPER_USD_FALLBACK) || 0.01;
 
 let cache: { rate: number; ts: number } | null = null;
 
+/**
+ * A CSPR/USD rate with enough provenance for a payer to reason about it.
+ *
+ * Our prices are stored in USD, so the WCSPR amount we quote moves with
+ * the rate. An agent paying under a token-denominated spending cap needs
+ * to know how old the rate is to size its own headroom, rather than
+ * discovering mid-task that a $0.05 article now costs more WCSPR than
+ * its cap allows.
+ */
+export type CsprUsdQuote = {
+  rate: number;
+  /** Age of the rate in seconds; 0 when just fetched. */
+  ageSec: number;
+  source: 'live' | 'cached' | 'fallback';
+};
+
 /** Current CSPR price in USD, cached for 60 seconds. */
 export async function getCsprUsdRate(): Promise<number> {
-  if (cache && Date.now() - cache.ts < 60_000) return cache.rate;
+  return (await getCsprUsdQuote()).rate;
+}
+
+/** As `getCsprUsdRate`, but also says how old the rate is and where it came from. */
+export async function getCsprUsdQuote(): Promise<CsprUsdQuote> {
+  if (cache && Date.now() - cache.ts < 60_000) {
+    return {
+      rate: cache.rate,
+      ageSec: Math.round((Date.now() - cache.ts) / 1000),
+      source: 'cached',
+    };
+  }
   try {
     // `no-store`, not `next: { revalidate: 60 }`: the Next.js data cache
     // outlives the function instance and answers a stale entry first,
@@ -36,7 +63,7 @@ export async function getCsprUsdRate(): Promise<number> {
       }`,
     );
     cache = { rate, ts: Date.now() };
-    return rate;
+    return { rate, ageSec: 0, source: 'live' };
   } catch (err) {
     // Still answer, but say so: a quote built from this rate may be old.
     const ageSec = cache ? Math.round((Date.now() - cache.ts) / 1000) : null;
@@ -45,7 +72,9 @@ export async function getCsprUsdRate(): Promise<number> {
         cache ? `cached rate=${cache.rate} ageSec=${ageSec}` : `fallback rate=${FALLBACK_RATE}`
       }`,
     );
-    return cache?.rate ?? FALLBACK_RATE;
+    return cache
+      ? { rate: cache.rate, ageSec: ageSec ?? 0, source: 'cached' }
+      : { rate: FALLBACK_RATE, ageSec: 0, source: 'fallback' };
   }
 }
 

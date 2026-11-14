@@ -1,6 +1,6 @@
 # Pico — Frictionless micropayments for creators & agents
 
-**Live:** [pico-payment-casper.vercel.app](https://pico-payment-casper.vercel.app) · **Follow:** [@picocspr](https://x.com/picocspr) · **Buildathon:** Casper Agentic Buildathon 2026 — Final Round qualifier · **Program:** Casper Forward Cohort 1 🏁
+**Live:** [casper.picomicropay.nl](https://casper.picomicropay.nl) · **Follow:** [@picocspr](https://x.com/picocspr) · **Buildathon:** Casper Agentic Buildathon 2026 — Final Round qualifier · **Program:** Casper Forward Cohort 1 🏁
 
 ## The idea
 
@@ -43,7 +43,7 @@ Full docs: **[docs/CASPER.md](docs/CASPER.md)**
 
 | | |
 |---|---|
-| App | https://pico-payment-casper.vercel.app |
+| App | https://casper.picomicropay.nl |
 | On-chain payments | [payer account activity](https://testnet.cspr.live/account/0203879bc44ec4a38209287ad72f5a872b36edaebba8ebfad5fae10931d704b38c0d) |
 | **PicoRouter contract** (Odra) | [`hash-b4b5d701…a0608c`](https://testnet.cspr.live/contract-package/b4b5d701e5bd635b8e49ae2b8dbc8a8169870a9c673479b8f2461d63efa0608c) — 95/5 fee splitter, [source](contracts/pico_router/src/pico_router.rs), [deploy tx](https://testnet.cspr.live/transaction/fc00276b08b835bad31054499fcabad42e1bef7509f56734a95f64a697f0b28d) |
 
