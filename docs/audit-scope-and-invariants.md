@@ -135,9 +135,40 @@ Flagged deliberately rather than left for discovery.
 
 ## 8. Admin surface
 
-`src/app/admin/page.tsx` is 340 lines and its powers are not yet
-specified here. This is the largest remaining gap against the
-audit-readiness checklist and should be filled before the code freeze.
+Admin access is two-factor by design (`src/lib/roles.ts`): the user row
+must carry `role === 'admin'` **and** the session email must appear in
+the `ADMIN_EMAILS` deploy-time allowlist. Both must pass, so a database
+write alone cannot grant admin without also editing the environment.
+
+What an admin can do:
+
+| Capability | Action |
+| --- | --- |
+| Read platform stats | `getPlatformStats` |
+| Read recent payments across all creators | `getPlatformRecentPayments` |
+| Read per-link widget stats across all creators | `getAllWidgetStatsForAdmin` |
+| Read outstanding promo liability | `getOutstandingPromoLiability` |
+| Trigger a treasury settlement run | `settleCreatorPromos` |
+| Mark promo debts settled without an on-chain transfer | `markPromosSettledManually` |
+
+An admin **cannot** change a creator's payout key, edit a creator's
+links or prices, or move funds anywhere other than to the creator
+wallets already owed a settled debt.
+
+The routine that moves treasury funds lives in
+`src/lib/settlement-core.ts`, outside `src/app/actions`, so it is not
+exported from a `'use server'` file and cannot be invoked by a direct
+POST. Its two callers are the `CRON_SECRET`-gated cron route and the
+admin-gated action wrapper.
+
+**Known limitation:** `runCreatorSettlement` is not safe to run
+concurrently. Redemptions are marked settled only after the transfer
+receipt confirms, so two overlapping runs can both read the same
+unsettled rows and pay twice. The callers are serial in practice — one
+daily cron, one admin button — but an admin clicking while the cron runs
+would double-pay. A claim step or row lock before the transfer would
+close it. Flagged here rather than changed, because altering payout
+logic without tests is its own risk.
 
 ## 9. Dependency advisory
 
