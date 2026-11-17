@@ -161,6 +161,12 @@ export async function submitCasperPayment(linkId: string, signedDeployJson: unkn
       if (!targetMatchesCreator(details.targetHex, creator.casperPublicKey)) {
         return { success: false as const, error: 'Transfer target is not the creator.' };
       }
+      // Binds the transfer to THIS link. Recipient and amount alone only
+      // prove "someone paid this creator enough" — without the memo the
+      // same deploy would satisfy any of the creator's links.
+      if (details.transferId === null || details.transferId !== BigInt(expectedTransferId)) {
+        return { success: false as const, error: 'Transfer id does not match this link.' };
+      }
       if (details.amountMotes < required) {
         return {
           success: false as const,
@@ -285,6 +291,11 @@ export async function confirmCasperPayment(linkId: string, deployHash: string) {
       }
       if (!targetMatchesCreator(details.targetHex, creator.casperPublicKey)) {
         return { success: false as const, status: 'error' as const, error: 'Recipient mismatch.' };
+      }
+      // Same binding as submit, re-checked against the deploy fetched
+      // from the node. This is the check that actually grants access.
+      if (details.transferId === null || details.transferId !== BigInt(expectedTransferId)) {
+        return { success: false as const, status: 'error' as const, error: 'Transfer id mismatch.' };
       }
       if (details.amountMotes < minAcceptableMotes(Number(link.price), rate)) {
         return { success: false as const, status: 'error' as const, error: 'Amount below price.' };

@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, decimal, uuid, integer, boolean } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, decimal, uuid, integer, boolean, uniqueIndex } from 'drizzle-orm/pg-core';
 
 // ─── Users ──────────────────────────────────────────────────
 // `role` decides which dashboard the user lands on after login and
@@ -71,7 +71,14 @@ export const payments = pgTable('payments', {
   // the Casper rail, so 'base' is the safe backfill default.
   chain: text('chain').notNull().default('base'),
   createdAt: timestamp('created_at').defaultNow(),
-});
+}, (t) => [
+  // One settlement unlocks one link. The rails already bind a payment
+  // to its link (the router's link_id arg, the native transfer's id
+  // memo), and this is the backstop: even if a verification path is
+  // ever weakened, the same tx_hash cannot be recorded against a
+  // second link.
+  uniqueIndex('payments_tx_hash_unique').on(t.txHash),
+]);
 
 export type Payment = typeof payments.$inferSelect;
 export type NewPayment = typeof payments.$inferInsert;

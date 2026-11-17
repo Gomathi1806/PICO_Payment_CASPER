@@ -36,6 +36,13 @@
       "when": 1784360268673,
       "tag": "0004_gray_miracleman",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794930071040,
+      "tag": "0005_black_black_queen",
+      "breakpoints": true
     }
   ]
 }
