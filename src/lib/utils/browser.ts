@@ -1,7 +1,10 @@
 export const isInAppBrowser = () => {
   if (typeof window === 'undefined') return false;
   
-  const ua = window.navigator.userAgent || window.navigator.vendor || ((window as any).opera as string | undefined) || '';
+  // `opera` is a legacy Presto-era global that TypeScript's lib.dom does not
+  // declare; widen Window rather than reaching for `any`.
+  const legacyOpera = (window as Window & { opera?: string }).opera;
+  const ua = window.navigator.userAgent || window.navigator.vendor || legacyOpera || '';
   
   // Detect common In-App Browsers
   const isInstagram = ua.indexOf('Instagram') > -1;
