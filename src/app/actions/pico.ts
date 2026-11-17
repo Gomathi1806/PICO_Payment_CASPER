@@ -1,5 +1,7 @@
 'use server';
 
+import { requireOwner, UNAUTHORIZED } from '@/lib/require-owner';
+
 import { db } from '@/db';
 import { picoLinks, users, payments } from '@/db/schema';
 import { eq, sql } from 'drizzle-orm';
@@ -13,12 +15,14 @@ export async function createPicoLink(data: {
   contentUrl?: string;
   type?: string;
 }) {
+  const ownerId = await requireOwner(data.creatorId);
+  if (!ownerId) return UNAUTHORIZED;
   try {
     const result = await db.insert(picoLinks).values({
       title: data.title,
       description: data.description,
       price: data.price,
-      creatorId: data.creatorId,
+      creatorId: ownerId,
       contentUrl: data.contentUrl || null,
       type: data.type || 'PDF',
     }).returning({ id: picoLinks.id });
@@ -35,11 +39,13 @@ export async function createPicoLink(data: {
 // Verifies the link belongs to the requesting creatorId before
 // returning anything, to prevent IDOR (one creator reading another's URLs).
 export async function getPicoLinkForOwner(linkId: string, creatorId: string) {
+  const ownerId = await requireOwner(creatorId);
+  if (!ownerId) return { success: false, link: null };
   try {
     const link = await db.query.picoLinks.findFirst({
       where: (picoLinks, { and, eq }) => and(
         eq(picoLinks.id, linkId),
-        eq(picoLinks.creatorId, creatorId),
+        eq(picoLinks.creatorId, ownerId),
       ),
     });
     if (!link) return { success: false, link: null };
@@ -71,6 +77,8 @@ export async function updatePicoLink(data: {
   minPrice?: string | null;
   maxPrice?: string | null;
 }) {
+  const ownerId = await requireOwner(data.creatorId);
+  if (!ownerId) return UNAUTHORIZED;
   try {
     const updateValues: Record<string, unknown> = {};
     if (data.title !== undefined) updateValues.title = data.title;
@@ -89,7 +97,7 @@ export async function updatePicoLink(data: {
     const result = await db
       .update(picoLinks)
       .set(updateValues)
-      .where(sql`${picoLinks.id} = ${data.linkId} AND ${picoLinks.creatorId} = ${data.creatorId}`)
+      .where(sql`${picoLinks.id} = ${data.linkId} AND ${picoLinks.creatorId} = ${ownerId}`)
       .returning({ id: picoLinks.id });
 
     if (!result.length) {
@@ -106,9 +114,11 @@ export async function updatePicoLink(data: {
 }
 
 export async function getPicoLinks(creatorId: string) {
+  const ownerId = await requireOwner(creatorId);
+  if (!ownerId) return { success: false, links: [] };
   try {
     const links = await db.query.picoLinks.findMany({
-      where: (picoLinks, { eq }) => eq(picoLinks.creatorId, creatorId),
+      where: (picoLinks, { eq }) => eq(picoLinks.creatorId, ownerId),
       orderBy: (picoLinks, { desc }) => [desc(picoLinks.createdAt)],
     });
     

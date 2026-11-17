@@ -1,5 +1,7 @@
 'use server';
 
+import { requireOwner, UNAUTHORIZED } from '@/lib/require-owner';
+
 // ─── Casper payment rail — server actions ───────────────────
 // Mirrors the trust model of the EVM flow but goes further: instead
 // of the client self-reporting a txHash (recordPayment), the Casper
@@ -315,6 +317,8 @@ export async function confirmCasperPayment(linkId: string, deployHash: string) {
 
 /** Saves the creator's Casper payout key after validating the hex. */
 export async function saveCasperPublicKey(userId: string, publicKeyHex: string) {
+  const ownerId = await requireOwner(userId);
+  if (!ownerId) return UNAUTHORIZED;
   try {
     const trimmed = publicKeyHex.trim();
     try {
@@ -326,7 +330,7 @@ export async function saveCasperPublicKey(userId: string, publicKeyHex: string) 
       };
     }
 
-    await db.update(users).set({ casperPublicKey: trimmed }).where(eq(users.id, userId));
+    await db.update(users).set({ casperPublicKey: trimmed }).where(eq(users.id, ownerId));
     return { success: true as const };
   } catch (error) {
     console.error('[pico/casper] key save failed:', error);
@@ -340,8 +344,10 @@ export async function saveCasperPublicKey(userId: string, publicKeyHex: string) 
  * native transfers. Off by default — creators opt in per account.
  */
 export async function setCasperUseRouter(userId: string, useRouter: boolean) {
+  const ownerId = await requireOwner(userId);
+  if (!ownerId) return UNAUTHORIZED;
   try {
-    await db.update(users).set({ casperUseRouter: useRouter }).where(eq(users.id, userId));
+    await db.update(users).set({ casperUseRouter: useRouter }).where(eq(users.id, ownerId));
     return { success: true as const };
   } catch (error) {
     console.error('[pico/casper] router toggle failed:', error);
