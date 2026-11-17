@@ -141,17 +141,29 @@ export async function ensureX402Ready() {
         .registerAsset(CASPER_CAIP2, wcspr, 9)
         .registerMoneyParser(async (usd, network) => {
           if (network !== CASPER_CAIP2) return null;
-          const { rate, ageSec, source } = await getCsprUsdQuote();
+          const { rate } = await getCsprUsdQuote();
           const wcsprAmount = Number(usd) / rate;
           return {
             asset: wcspr,
             amount: wcsprAmount.toFixed(9),
             // `name` and `version` feed the EIP-712 domain — buildDomain()
-            // reads them positionally — so they must not change. The rate
-            // fields below are additive provenance for agents: our price is
-            // fixed in USD, so the WCSPR amount moves with CSPR. An agent
-            // paying under a token-denominated spending cap can use the rate
-            // and its age to size headroom instead of guessing.
+            // reads them positionally — so they must not change.
+            //
+            // NOTHING IN HERE MAY VARY BETWEEN THE QUOTE AND THE PAID
+            // RETRY. @x402/core matches the client's signed `accepted`
+            // against freshly-built requirements, `extra` included, so a
+            // field that moves on its own makes the retry fail with
+            // "No matching payment requirements" and nothing settles.
+            //
+            // rateAgeSec and rateSource used to live here. rateAgeSec
+            // ticks every second and rateSource flips to 'cached', so
+            // any retry landing in a later second was rejected — CasCet
+            // lost 5 of 8 paid retries to it. They are now returned as
+            // response headers on the 402 instead (see withDynamicX402).
+            //
+            // priceUsd and rateUsd stay: they are fixed for the life of
+            // a quote, and when the cached rate does move the `amount`
+            // moves with it, which is a genuine re-quote.
             extra: {
               name: 'Wrapped CSPR',
               symbol: 'WCSPR',
@@ -159,8 +171,6 @@ export async function ensureX402Ready() {
               decimals: '9',
               priceUsd: String(usd),
               rateUsd: String(rate),
-              rateAgeSec: String(ageSec),
-              rateSource: source,
             },
           };
         });
@@ -292,6 +302,23 @@ export function withDynamicX402<M = undefined>(
       );
 
       const response = await wrapped(req);
+
+      // Rate provenance for agents paying under a token-denominated
+      // spending cap: the price is fixed in USD, so the WCSPR amount
+      // moves with CSPR and an agent needs the rate and its age to size
+      // its own headroom. Headers, not accepts[].extra — see the note on
+      // the money parser above for why putting them in `extra` broke
+      // paid retries. Best-effort: never fail a 402 over provenance.
+      if (response.status === 402 && config.casperPayTo && casperX402Enabled()) {
+        try {
+          const { rate, ageSec, source } = await getCsprUsdQuote();
+          response.headers.set('X-Pico-Cspr-Rate-Usd', String(rate));
+          response.headers.set('X-Pico-Cspr-Rate-Age-Sec', String(ageSec));
+          response.headers.set('X-Pico-Cspr-Rate-Source', source);
+        } catch (e) {
+          console.warn('[pico/x402] could not attach rate provenance:', e);
+        }
+      }
 
       // withX402 settles after the handler returns a <400 response and
       // puts the result in the PAYMENT-RESPONSE header (X-PAYMENT-RESPONSE
