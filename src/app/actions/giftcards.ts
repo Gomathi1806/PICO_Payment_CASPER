@@ -1,5 +1,7 @@
 'use server';
 
+import { requireOwner, UNAUTHORIZED } from '@/lib/require-owner';
+
 import { db } from '@/db';
 import { picoLinks, users, giftCards, giftCardRedemptions } from '@/db/schema';
 import { and, eq, gte, sql } from 'drizzle-orm';
@@ -297,8 +299,11 @@ export async function createGiveaway(data: {
   linkId: string;
   quantity: number;
 }) {
+  const ownerId = await requireOwner(data.creatorId);
+  if (!ownerId) return UNAUTHORIZED;
   try {
-    const { creatorId, linkId, quantity } = data;
+    const { linkId, quantity } = data;
+    const creatorId = ownerId;
     const link = await db.query.picoLinks.findFirst({ where: eq(picoLinks.id, linkId) });
     if (!link) return { success: false, error: 'Link not found.' };
     if (link.creatorId !== creatorId) {

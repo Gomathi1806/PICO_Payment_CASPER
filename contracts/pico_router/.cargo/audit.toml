@@ -1,0 +1,35 @@
+# cargo-audit configuration for the Pico router crate.
+#
+# RUSTSEC-2026-0387 — crypto-bigint 0.5.5, "Multiple timing variability
+# issues in operations intended to be constant-time".
+#
+# Why it is parked rather than fixed:
+#
+#   casper-types 6.1.0 / 7.0.0
+#     -> k256 0.13.4
+#       -> elliptic-curve 0.13.8   (pins crypto-bigint ^0.5)
+#         -> crypto-bigint 0.5.5
+#
+# The patched 0.7.6 first appears behind elliptic-curve 0.14, so there is
+# no upgrade path from this repository until upstream Casper moves to
+# k256 0.14. Bumping odra to 2.10.1 was tried and does not change the
+# resolution — crypto-bigint stays at 0.5.5.
+#
+# Why it does not apply here:
+#
+# The advisory describes a timing side channel in secret-dependent
+# big-integer arithmetic. PicoRouter executes deterministically on chain
+# and holds no private keys, so there is no secret whose processing time
+# an attacker could observe. Host-side signing in this project is
+# TypeScript (casper-js-sdk), not this crate.
+#
+# Scope of this file:
+#
+# Exactly one advisory is suppressed. Every other RUSTSEC advisory,
+# including any new one, still fails the `casper router (Odra/Rust)` job.
+#
+# Reviewed 17 Nov 2026. Remove this entry once casper-types ships a
+# release built on k256 0.14.
+
+[advisories]
+ignore = ["RUSTSEC-2026-0387"]

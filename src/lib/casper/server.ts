@@ -46,6 +46,48 @@ export interface TransferDetails {
   targetHex: string; // public key hex OR account-hash hex, lowercased
   amountMotes: bigint;
   chainName: string;
+  /**
+   * The transfer's `id` memo (u64), or null when the sender omitted it.
+   * Pico hands this out in the 402 response and the payment info as
+   * `transferId`, derived from the link UUID — it is what ties a native
+   * transfer to the link it pays for. The router rail carries the same
+   * value as the `link_id` arg. Callers MUST check it: recipient and
+   * amount alone do not identify which link a transfer bought.
+   */
+  transferId: bigint | null;
+}
+
+/**
+ * Reads the optional u64 `id` memo off a native transfer arg.
+ *
+ * The arg is a CLOption<U64>, whose runtime shape differs across
+ * casper-js-sdk versions (ts-results Option, a bare value, or absent).
+ * Anything that does not yield a u64 is reported as null, which callers
+ * treat as "no memo" and reject — failing closed rather than silently
+ * accepting an unbound transfer.
+ */
+function readTransferId(arg: unknown): bigint | null {
+  if (!arg) return null;
+  try {
+    const unwrapped = (arg as { value: () => unknown }).value();
+    if (unwrapped === null || unwrapped === undefined) return null;
+
+    if (typeof unwrapped === 'object') {
+      const opt = unwrapped as { none?: boolean; val?: unknown };
+      if (opt.none === true) return null;
+      if ('val' in opt) {
+        const inner = opt.val as { value?: () => unknown } | null;
+        if (inner === null || inner === undefined) return null;
+        const raw = typeof inner.value === 'function' ? inner.value() : inner;
+        if (raw === null || raw === undefined) return null;
+        return BigInt((raw as { toString(): string }).toString());
+      }
+    }
+
+    return BigInt((unwrapped as { toString(): string }).toString());
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -102,6 +144,7 @@ export function parseTransferDeploy(signedDeployJson: unknown): {
       targetHex,
       amountMotes,
       chainName: deploy.header.chainName,
+      transferId: readTransferId(transfer.getArgByName('id')),
     },
   };
 }
