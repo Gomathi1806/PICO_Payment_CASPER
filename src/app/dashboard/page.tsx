@@ -25,6 +25,13 @@ import { PicoLink } from '@/db/schema';
 // the buyer on every rail, so it is never deducted from earnings.
 type ChainTotal = { chain: string; total: string; count: number };
 
+// Derived from the server actions rather than hand-written, so these stay
+// correct if the action's select or serialisation changes. Both actions
+// serialise Date fields to strings before crossing the server boundary, so
+// these are not the raw drizzle row types.
+type DashboardLink = Awaited<ReturnType<typeof getPicoLinks>>['links'][number];
+type ActivityRow = Awaited<ReturnType<typeof getRecentActivity>>['activity'][number];
+
 const isCasperRail = (chain: string) => chain.startsWith('casper');
 const withholdsFee = (chain: string) => !isCasperRail(chain) || chain.endsWith('-router');
 const railAsset = (chain: string) => (isCasperRail(chain) ? 'CSPR' : 'USDC');
@@ -51,7 +58,7 @@ export default function CreatorDashboard() {
   const { address, isConnected } = useAccount();
   const { connect, connectors } = useConnect();
 
-  const [items, setItems] = useState<any[]>([]);
+  const [items, setItems] = useState<DashboardLink[]>([]);
   const [loading, setLoading] = useState(true);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [isConnectingWallet, setIsConnectingWallet] = useState(false);
@@ -66,7 +73,7 @@ export default function CreatorDashboard() {
   const [totalSales, setTotalSales] = useState(0);
   const [earningsByChain, setEarningsByChain] = useState<ChainTotal[]>([]);
   const [perLinkStats, setPerLinkStats] = useState<Record<string, { sales: number; earned: string }>>({});
-  const [recentActivity, setRecentActivity] = useState<any[]>([]);
+  const [recentActivity, setRecentActivity] = useState<ActivityRow[]>([]);
   const [gbpRate, setGbpRate] = useState(0.78);
 
   const [isCashOutOpen, setIsCashOutOpen] = useState(false);
